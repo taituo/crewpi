@@ -150,6 +150,14 @@ k8s/ keycloak/ deploy.sh                             test/           unit + end-
 `npm test` needs Node ≥ 22.19 and `git`. Local run without Keycloak: `AUTH_MODE=dev DEMO_MODE=true npm start`
 (dev logins at `/auth/login`; never enable in a cluster).
 
+## Status
+
+A working prototype and demo platform, not a product. It runs end to end on a single-node k3s cluster (Keycloak login,
+channels and cases, agents on Pi Durable, approvals, memory, sandbox pods, Temporal incident workflows), is covered by
+unit and end-to-end tests (`npm test`; the workflow tests need the `temporal` CLI), and is documented below. Expect
+rough edges: dev-mode Keycloak and Temporal, plain HTTP, one workspace replica, experimental upstream dependencies
+(Pi Durable is pinned to 1.0.4). See [SECURITY.md](SECURITY.md) for the security model and known limitations.
+
 ## Security model and honest limits
 
 - Agents have **no shell**. Their world is a fixed set of tools; file paths and git refs are validated, writes only
