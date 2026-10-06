@@ -16,6 +16,16 @@ export function loadExtraTickets() {
 	}
 	const a = db.prepare("SELECT value FROM settings WHERE key = 'anomalies'").get() as { value: string } | undefined;
 	if (a) Object.assign(f.anomalies, JSON.parse(a.value));
+	const fx = db.prepare("SELECT value FROM settings WHERE key = 'checkoutFixedAt'").get() as { value: string } | undefined;
+	if (fx) f.live.checkoutFixedAt = Number(fx.value);
+}
+
+/** Called when the checkout config fix is applied to the real cluster: the demo world recovers accordingly. */
+export function markCheckoutFixed() {
+	if (f.live.checkoutFixedAt) return;
+	f.live.checkoutFixedAt = Date.now();
+	db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('checkoutFixedAt', ?)").run(String(f.live.checkoutFixedAt));
+	f.findIssue("PAY-412")?.comments.push({ by: "Ops (auto)", at: new Date().toISOString(), text: "Reviewed config fix applied (POOL_SIZE), checkout-api restarted. Watching recovery." });
 }
 
 export function saveAnomalies() {

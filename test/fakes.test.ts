@@ -32,3 +32,13 @@ test("fake world tells one story", () => {
 	assert.ok(f.workflows.some((w) => w.status === "Failed" && /smokeTest/.test(w.failure ?? "")));
 	assert.ok(f.ciLogs["github:9004:unit-tests"]);
 });
+
+test("the demo world recovers once the checkout fix is applied", () => {
+	const before = f.queryMetric("checkout_5xx_rate", 10, 6).at(-1)!.v;
+	assert.ok(before > 5);
+	assert.equal(f.envView().prod.find((s: any) => s.service === "checkout-api")?.health, "CrashLoopBackOff");
+	f.live.checkoutFixedAt = Date.now() - 120_000; // fixed two minutes ago
+	assert.ok(f.queryMetric("checkout_5xx_rate", 10, 6).at(-1)!.v < 1.5, "5xx back to normal after the fix");
+	assert.equal(f.envView().prod.find((s: any) => s.service === "checkout-api")?.health, "Healthy");
+	f.live.checkoutFixedAt = null;
+});

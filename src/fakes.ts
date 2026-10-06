@@ -137,6 +137,16 @@ export const environments = {
 	],
 } as const;
 
+/** Environment status as the demo world sees it now: prod checkout-api is healthy once the fix has been applied. */
+export function envView() {
+	const copy: Record<string, any[]> = JSON.parse(JSON.stringify(environments));
+	if (live.checkoutFixedAt) {
+		const s = copy.prod.find((x) => x.service === "checkout-api");
+		if (s) Object.assign(s, { ready: "1/1", health: "Healthy", note: "recovered after the config fix" });
+	}
+	return copy;
+}
+
 // ------------------------------------------------------------------ Grafana
 
 export const dashboards = [
@@ -156,6 +166,8 @@ export const METRICS: Record<string, { unit: string; title: string }> = {
 
 /** Injected anomalies by metric: start time in ms. Set by the demo controls, read by queryMetric. */
 export const anomalies: Record<string, number> = {};
+/** The demo world reacts to what really happens in the cluster: set when the checkout config fix is applied. */
+export const live = { checkoutFixedAt: null as number | null };
 const INCIDENT_START_MIN_AGO = 42;
 const hash = (s: string) => {
 	let h = 2166136261;
@@ -174,13 +186,16 @@ export function queryMetric(metric: string, minutes: number, points = 24): { t: 
 		const minute = now - Math.round(minAgo);
 		const noise = hash(`${metric}:${minute}`) - 0.5;
 		const t = Date.now() - Math.round(minAgo) * MIN;
-		const inc = smooth((INCIDENT_START_MIN_AGO - minAgo) / 5);
+		let inc = smooth((INCIDENT_START_MIN_AGO - minAgo) / 5);
+		const fixedAt = live.checkoutFixedAt;
+		if (fixedAt && t > fixedAt) inc *= 1 - smooth((t - fixedAt) / 60_000); // recovers within a minute of the fix
+		const restartMinAgo = fixedAt && t > fixedAt ? (Date.now() - fixedAt) / MIN : minAgo; // restarts stop at the fix
 		const ordersInc = anomalies.orders_queue_depth ? smooth((t - anomalies.orders_queue_depth) / MIN / 5) : 0;
 		const v =
 			metric === "checkout_5xx_rate" ? 0.2 + 14.6 * inc + noise * (0.2 + inc * 2.2)
 			: metric === "checkout_latency_p95_ms" ? 180 + 720 * inc + noise * (30 + inc * 160)
 			: metric === "checkout_requests_per_s" ? 120 - 45 * inc + noise * 14
-			: metric === "checkout_pod_restarts" ? Math.max(0, Math.floor((INCIDENT_START_MIN_AGO - minAgo) / 4))
+			: metric === "checkout_pod_restarts" ? Math.max(0, Math.floor((INCIDENT_START_MIN_AGO - restartMinAgo) / 4))
 			: metric === "checkout_cpu_cores" ? 0.55 - 0.3 * inc + noise * 0.06
 			: 40 + 170 * ordersInc + noise * 12; // orders_queue_depth backs up only while an injected anomaly is active
 		out.push({ t, v: Math.round(Math.max(0, v) * 100) / 100 });

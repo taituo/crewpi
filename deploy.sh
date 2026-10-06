@@ -3,7 +3,7 @@
 # Idempotent: secrets are generated once and kept in the cluster.
 #   BASE_DOMAIN   required; hostnames are crew.<BASE_DOMAIN> and auth.<BASE_DOMAIN> (e.g. 203.0.113.10.nip.io)
 #   OPENAI_API_KEY  if set, stored as secret ai-workspace/inference and used by the agents
-#   RESET=1       wipe chat history, agent memory and the repo, and break checkout-api again (fresh demo)
+#   RESET=1       wipe chat history, agent memory, the repo and Temporal history, and break checkout-api again (fresh demo)
 set -euo pipefail
 cd "$(dirname "$0")"
 [ -f .deploy.env ] && . ./.deploy.env   # local defaults (not secrets), e.g. LOCAL_LLM_*
@@ -47,6 +47,8 @@ if [ "${RESET:-}" = "1" ]; then
   kubectl -n $NS delete deploy/workspace --ignore-not-found --wait=true >/dev/null
   kubectl -n $NS delete pvc/workspace-data --ignore-not-found --wait=true >/dev/null
   kubectl -n demo-apps delete cm/checkout-config deploy/checkout-api --ignore-not-found >/dev/null
+  # Temporal keeps workflow history on its own volume; stale workflows would refer to channels that no longer exist.
+  kubectl -n ai-workflows delete deploy/temporal pvc/temporal-data --ignore-not-found --wait=true >/dev/null 2>&1 || true
 fi
 
 if ! kubectl -n $NS get secret workspace-secrets >/dev/null 2>&1; then

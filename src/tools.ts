@@ -3,7 +3,7 @@ import { CompactionTask, defineExtension, defineTool, hook, section } from "@ear
 import type { Context } from "@earendil-works/chord";
 import { agentById } from "./agents.ts";
 import { agentsInChannel, channelById } from "./channels.ts";
-import { isTicketKey, openCase } from "./cases.ts";
+import { isTicketKey, markCheckoutFixed, openCase } from "./cases.ts";
 import { config } from "./config.ts";
 import { store } from "./db.ts";
 import { approvalBus, bridge, hub } from "./hub.ts";
@@ -421,6 +421,7 @@ const applyFromRepo = defineTool({
 				);
 				restarted = ` Restarted deployment ${args.restart}.`;
 			}
+			if (namespace === "demo-apps" && changes.some((c) => c.key === "POOL_SIZE" && Number(c.to) > 0)) markCheckoutFixed();
 			store.audit(`agent:${where(api.conversationId).agentId}`, "k8s.apply", { namespace, name, ref: args.ref, changes, approvedBy: v.by });
 			return text(`${verdict(v)} Applied ${namespace}/${name}: ${changes.map((c) => `${c.key} ${c.from} -> ${c.to}`).join(", ")}.${restarted} Verify with k8s_pods.`);
 		} catch (e) {

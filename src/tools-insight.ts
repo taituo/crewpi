@@ -101,7 +101,7 @@ const wfHistory = tool("temporal", "temporal_history", "Event history of a workf
 const envStatus = tool("envstatus", "env_status", "Status of services in dev, staging and prod (version, readiness, health, last deploy).", { env: S("dev | staging | prod; omit for all") }, ({ env }) => {
 	const names = env ? [env] : ["prod", "staging", "dev"];
 	return names.map((n) => {
-		const e = (f.environments as any)[n];
+		const e = (f.envView() as any)[n];
 		if (!e) throw new Error(`unknown environment ${n}`);
 		return `${n}:\n${e.map((s: any) => `  ${s.service}  ${s.version}  ${s.ready}  ${s.health}  deployed ${mins(s.deployedMinAgo)}${s.note ? `  - ${s.note}` : ""}`).join("\n")}`;
 	}).join("\n");
