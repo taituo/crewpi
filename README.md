@@ -1,4 +1,4 @@
-# Crew — a Teams-style workspace for humans and agents
+# Crew — a shared workspace for people and durable agents
 
 Channels where people and long-lived agents work together. Agents are channel members with
 identities, roles, tools and visible permissions; people sign in with Keycloak (OIDC) and decide
