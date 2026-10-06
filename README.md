@@ -4,6 +4,10 @@ Channels where people and long-lived agents work together. Agents are channel me
 identities, roles, tools and visible permissions; people sign in with Keycloak (OIDC) and decide
 what agents may do to live systems.
 
+[![Crew demo: an incident from request to approval to a case closed by a workflow (looping preview, click for the full video)](docs/img/demo-preview.gif)](docs/demo/crew-demo.mp4)
+
+*A person asks Ops for help; agents hand work to each other and validate in a sandbox pod; a human approves the change. Later an alert opens a case and a workflow waits for a decision. Looping preview: click it for the full 1:26 video with captions.*
+
 ```
 Browser (Preact, no build) ──SSE/REST──▶ workspace (Node 22, one process)
         ▲                                   │  auth: Keycloak OIDC code+PKCE, roles → perms
