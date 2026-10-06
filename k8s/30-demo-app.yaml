@@ -1,0 +1,37 @@
+# A deliberately broken service for the agents to investigate: POOL_SIZE=0 makes it exit at start.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: checkout-config, namespace: demo-apps }
+data:
+  POOL_SIZE: "0"
+  REGION: eu-north-1
+  FEATURE_NEW_CART: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: checkout-api, namespace: demo-apps, labels: { app: checkout-api } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: checkout-api } }
+  template:
+    metadata: { labels: { app: checkout-api } }
+    spec:
+      containers:
+        - name: api
+          image: docker.io/library/busybox:1.37
+          envFrom: [{ configMapRef: { name: checkout-config } }]
+          command:
+            - sh
+            - -c
+            - |
+              echo "checkout-api starting (region=$REGION, new_cart=$FEATURE_NEW_CART)"
+              if [ "$POOL_SIZE" -le 0 ]; then
+                echo "FATAL: database pool size must be > 0 (POOL_SIZE=$POOL_SIZE)"
+                exit 1
+              fi
+              echo "database pool ready: $POOL_SIZE connections"
+              echo "listening on :8080"
+              while true; do sleep 30; echo "ok $(date -u +%T)"; done
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

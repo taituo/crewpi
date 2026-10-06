@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: keycloak-data, namespace: ai-workspace }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: keycloak, namespace: ai-workspace, labels: { app: keycloak } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      securityContext: { fsGroup: 1000 }
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0.8
+          args: ["start-dev", "--import-realm"]
+          env:
+            - { name: KC_HOSTNAME, value: "http://auth.${BASE_DOMAIN}" }
+            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
+            - { name: KC_HTTP_ENABLED, value: "true" }
+            - { name: KC_PROXY_HEADERS, value: "xforwarded" }
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: "admin" }
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: workspace-secrets, key: keycloak-admin-password } }
+            - { name: JAVA_OPTS_APPEND, value: "-Xms256m -Xmx640m" }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /realms/demo, port: 8080 }
+            initialDelaySeconds: 25
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 200m, memory: 600Mi }
+            limits: { memory: 1100Mi }
+          volumeMounts:
+            - { name: data, mountPath: /opt/keycloak/data/h2 }
+            - { name: realm, mountPath: /opt/keycloak/data/import }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: keycloak-data }
+        - name: realm
+          configMap: { name: keycloak-realm }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: keycloak, namespace: ai-workspace }
+spec:
+  selector: { app: keycloak }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: keycloak, namespace: ai-workspace }
+spec:
+  rules:
+    - host: auth.${BASE_DOMAIN}
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: keycloak, port: { number: 8080 } } } }

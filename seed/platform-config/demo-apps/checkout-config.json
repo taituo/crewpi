@@ -1,0 +1,10 @@
+{
+  "apiVersion": "v1",
+  "kind": "ConfigMap",
+  "metadata": { "name": "checkout-config", "namespace": "demo-apps" },
+  "data": {
+    "POOL_SIZE": "0",
+    "REGION": "eu-north-1",
+    "FEATURE_NEW_CART": "true"
+  }
+}

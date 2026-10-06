@@ -1,0 +1,61 @@
+# A private Temporal server (dev mode, SQLite on a volume) for the workspace's durable workflows.
+# Only the workspace can reach it; its UI port is not exposed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-workflows
+  labels: { app.kubernetes.io/part-of: crew }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: temporal-data, namespace: ai-workflows }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: temporal, namespace: ai-workflows, labels: { app: temporal } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: temporal } }
+  template:
+    metadata: { labels: { app: temporal } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { fsGroup: 1000, runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: temporal
+          image: docker.io/temporalio/temporal:latest
+          imagePullPolicy: IfNotPresent
+          args: ["server", "start-dev", "--ip", "0.0.0.0", "--headless", "--db-filename", "/data/temporal.db", "--log-level", "warn"]
+          ports: [{ containerPort: 7233 }]
+          readinessProbe: { tcpSocket: { port: 7233 }, initialDelaySeconds: 5, periodSeconds: 3 }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 640Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: temporal-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: temporal, namespace: ai-workflows }
+spec:
+  selector: { app: temporal }
+  ports: [{ name: grpc, port: 7233, targetPort: 7233 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: workspace-only, namespace: ai-workflows }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ai-workspace } }
+          podSelector: { matchLabels: { app: workspace } }
+      ports: [{ protocol: TCP, port: 7233 }]

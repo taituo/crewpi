@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: workspace, namespace: ai-workspace }
+---
+# The agents' whole cluster authority: read the demo namespace, patch one kind of config and restarts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: crew-agent, namespace: demo-apps }
+rules:
+  - { apiGroups: [""], resources: [pods, events], verbs: [get, list] }
+  - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+  - { apiGroups: [""], resources: [configmaps], verbs: [get, list, patch] }
+  - { apiGroups: [apps], resources: [deployments], verbs: [get, list, patch] }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: crew-agent, namespace: demo-apps }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: crew-agent }
+subjects: [{ kind: ServiceAccount, name: workspace, namespace: ai-workspace }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: workspace-data, namespace: ai-workspace }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: workspace, namespace: ai-workspace, labels: { app: workspace } }
+spec:
+  replicas: 1 # one process owns the SQLite files
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: workspace } }
+  template:
+    metadata: { labels: { app: workspace } }
+    spec:
+      serviceAccountName: workspace
+      securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000 }
+      containers:
+        - name: workspace
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PUBLIC_URL, value: "http://crew.${BASE_DOMAIN}" }
+            - { name: AUTH_MODE, value: "oidc" }
+            - { name: OIDC_ISSUER_PUBLIC, value: "http://auth.${BASE_DOMAIN}/realms/demo" }
+            - { name: OIDC_ISSUER_INTERNAL, value: "http://keycloak.ai-workspace.svc.cluster.local:8080/realms/demo" }
+            - { name: OIDC_CLIENT_ID, value: "workspace" }
+            - name: OIDC_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: workspace-secrets, key: oidc-client-secret } }
+            - name: SESSION_SECRET
+              valueFrom: { secretKeyRef: { name: workspace-secrets, key: session-secret } }
+            - name: OPENAI_API_KEY
+              valueFrom: { secretKeyRef: { name: inference, key: openai-api-key, optional: true } }
+            - name: OPENROUTER_API_KEY
+              valueFrom: { secretKeyRef: { name: inference, key: openrouter-api-key, optional: true } }
+            - { name: OPENROUTER_BUDGET_USD, value: "${OPENROUTER_BUDGET_USD}" }
+            - { name: AGENT_OPS_MODEL, value: "${AGENT_OPS_MODEL}" }
+            - { name: AGENT_DEVELOPER_MODEL, value: "${AGENT_DEVELOPER_MODEL}" }
+            - { name: AGENT_REVIEWER_MODEL, value: "${AGENT_REVIEWER_MODEL}" }
+            - { name: AGENT_INSIGHT_MODEL, value: "${AGENT_INSIGHT_MODEL}" }
+            - { name: OPTCHAT_MODEL, value: "${OPTCHAT_MODEL}" }
+            - { name: SANDBOX_IMAGE, value: "${SANDBOX_IMAGE}" }
+            - { name: TEMPORAL_ADDRESS, value: "temporal.ai-workflows.svc.cluster.local:7233" }
+            - { name: LOCAL_LLM_BASE_URL, value: "${LOCAL_LLM_BASE_URL}" }
+            - { name: LOCAL_LLM_MODEL, value: "${LOCAL_LLM_MODEL}" }
+            - name: LOCAL_LLM_API_KEY
+              valueFrom: { secretKeyRef: { name: inference, key: local-api-key, optional: true } }
+            - { name: COMPACT_KEEP_RECENT_TOKENS, value: "${COMPACT_KEEP_RECENT_TOKENS}" }
+            - { name: OPTCHAT_VIEW_BYTES, value: "${OPTCHAT_VIEW_BYTES}" }
+            - { name: K8S_READ_NAMESPACES, value: "demo-apps" }
+            - { name: K8S_WRITE_NAMESPACES, value: "demo-apps" }
+            - { name: BRAND_NAME, value: "${BRAND_NAME}" }
+            - { name: BRAND_WORKSPACE, value: "${BRAND_WORKSPACE}" }
+            - { name: BRAND_ACCENT, value: "${BRAND_ACCENT}" }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 20, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 100m, memory: 160Mi }
+            limits: { memory: 1280Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: workspace-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: workspace, namespace: ai-workspace }
+spec:
+  selector: { app: workspace }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: workspace
+  namespace: ai-workspace
+  annotations:
+    # SSE needs unbuffered, long-lived responses
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: crew.${BASE_DOMAIN}
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: workspace, port: { number: 80 } } } }

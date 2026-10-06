@@ -1,0 +1,83 @@
+# Where agents run untrusted code: one short-lived pod per channel, created by the workspace through a narrow Role.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-sandboxes
+  labels:
+    app.kubernetes.io/part-of: crew
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: sandbox-quota, namespace: ai-sandboxes }
+spec:
+  hard: { pods: "3", limits.cpu: "3", limits.memory: 3Gi, requests.cpu: "500m", requests.memory: 512Mi }
+---
+apiVersion: v1
+kind: LimitRange
+metadata: { name: sandbox-defaults, namespace: ai-sandboxes }
+spec:
+  limits:
+    - type: Container
+      default: { cpu: "1", memory: 1Gi }
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+---
+# Default deny both directions, then open only what a sandbox needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: ai-sandboxes }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-runner-from-workspace, namespace: ai-sandboxes }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ai-workspace } }
+          podSelector: { matchLabels: { app: workspace } }
+      ports: [{ protocol: TCP, port: 8099 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-dns, namespace: ai-sandboxes }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+---
+# Public internet on 80/443 only (package registries, git hosting). Everything private is excluded:
+# the cluster (pods, services, API), the node, the tailnet, link-local.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-public-web, namespace: ai-sandboxes }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16, 127.0.0.0/8]
+      ports: [{ protocol: TCP, port: 443 }, { protocol: TCP, port: 80 }]
+---
+# The workspace may create and delete pods here, nothing else (no exec, no logs, no secrets).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: sandbox-manager, namespace: ai-sandboxes }
+rules:
+  - { apiGroups: [""], resources: [pods], verbs: [create, get, list, delete] }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: sandbox-manager, namespace: ai-sandboxes }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: sandbox-manager }
+subjects: [{ kind: ServiceAccount, name: workspace, namespace: ai-workspace }]

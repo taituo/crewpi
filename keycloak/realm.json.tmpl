@@ -1,0 +1,49 @@
+{
+  "realm": "demo",
+  "enabled": true,
+  "displayName": "${BRAND_NAME}",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "viewer", "description": "Read channels" },
+      { "name": "operator", "description": "Chat with and start agents" },
+      { "name": "approver", "description": "Decide approval requests" },
+      { "name": "admin", "description": "Everything" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "workspace",
+      "name": "${BRAND_NAME}",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://crew.${BASE_DOMAIN}",
+      "redirectUris": ["http://crew.${BASE_DOMAIN}/auth/callback"],
+      "webOrigins": ["http://crew.${BASE_DOMAIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://crew.${BASE_DOMAIN}/*"
+      }
+    }
+  ],
+  "users": [
+    { "username": "alice", "firstName": "Alice", "lastName": "Approver", "email": "alice@example.test", "emailVerified": true, "enabled": true,
+      "credentials": [{ "type": "password", "value": "${PW_ALICE}", "temporary": false }], "realmRoles": ["approver"] },
+    { "username": "bob", "firstName": "Bob", "lastName": "Operator", "email": "bob@example.test", "emailVerified": true, "enabled": true,
+      "credentials": [{ "type": "password", "value": "${PW_BOB}", "temporary": false }], "realmRoles": ["operator"] },
+    { "username": "carol", "firstName": "Carol", "lastName": "Viewer", "email": "carol@example.test", "emailVerified": true, "enabled": true,
+      "credentials": [{ "type": "password", "value": "${PW_CAROL}", "temporary": false }], "realmRoles": ["viewer"] },
+    { "username": "dave", "firstName": "Dave", "lastName": "Admin", "email": "dave@example.test", "emailVerified": true, "enabled": true,
+      "credentials": [{ "type": "password", "value": "${PW_DAVE}", "temporary": false }], "realmRoles": ["admin"] }
+  ]
+}

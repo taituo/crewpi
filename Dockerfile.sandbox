@@ -1,0 +1,9 @@
+FROM docker.io/library/node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git python3 jq ca-certificates curl make \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd -u 10001 -m -s /bin/sh sandbox && mkdir /work && chown sandbox /work
+COPY sandbox/runner.mjs /opt/runner.mjs
+USER 10001
+WORKDIR /work
+EXPOSE 8099
+CMD ["node", "/opt/runner.mjs"]
