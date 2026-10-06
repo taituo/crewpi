@@ -33,7 +33,8 @@ export async function startIncident(input: IncidentInput): Promise<{ workflowId:
 	if (!c) throw new Error("Temporal is not available");
 	const workflowId = incidentWorkflowId(input.channelId);
 	try {
-		await c.workflow.start("incidentWorkflow", { taskQueue: config.temporal.taskQueue, workflowId, args: [input], workflowIdReusePolicy: "ALLOW_DUPLICATE_FAILED_ONLY" as any });
+		// ALLOW_DUPLICATE: a closed case can be run again; a running one is still refused (AlreadyStarted below).
+		await c.workflow.start("incidentWorkflow", { taskQueue: config.temporal.taskQueue, workflowId, args: [input], workflowIdReusePolicy: "ALLOW_DUPLICATE" as any });
 		return { workflowId, started: true };
 	} catch (e) {
 		if ((e as Error).name === "WorkflowExecutionAlreadyStartedError") return { workflowId, started: false };
@@ -53,7 +54,10 @@ export async function listLive(limit = 15): Promise<LiveWorkflow[]> {
 	const c = await getClient();
 	if (!c) return [];
 	const out: LiveWorkflow[] = [];
-	for await (const w of c.workflow.list({ pageSize: limit })) {
+	const seen = new Set<string>();
+	for await (const w of c.workflow.list({ pageSize: limit * 2 })) {
+		if (seen.has(w.workflowId)) continue; // newest run first: older runs of the same id are history
+		seen.add(w.workflowId);
 		out.push({ id: w.workflowId, type: w.type, status: w.status.name, startedAt: w.startTime.getTime(), closedAt: w.closeTime ? w.closeTime.getTime() : null, channelId: w.workflowId.replace(/^incident-/, "") });
 		if (out.length >= limit) break;
 	}

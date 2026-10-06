@@ -189,7 +189,7 @@ function CaseCard({ m }) {
 	</div>`;
 }
 
-function WorkflowCard({ m, me, wfs, onDecision }) {
+function WorkflowCard({ m, me, wfs, onDecision, agentIds }) {
 	const wf = wfs[m.meta.workflowId];
 	const waiting = !wf || wf.step === "await-human";
 	const [note, setNote] = useState("");
@@ -198,7 +198,7 @@ function WorkflowCard({ m, me, wfs, onDecision }) {
 	return html`<div class="msg" style="max-width:760px"><div class=${"card " + (waiting ? "pending" : "approved")}>
 		<h5>Workflow · ${m.meta.workflowId}</h5>
 		<div class="title">${waiting ? "Waiting for a decision" : wf?.status === "RUNNING" ? `Decision made, workflow is at step: ${wf.step || "…"}` : `Workflow ${String(wf?.status || "").toLowerCase()}`}</div>
-		<div class="text" style="margin-bottom:8px"><b>Proposed next step</b><br />${m.meta.plan}</div>
+		<div style="margin-bottom:8px"><b>Proposed next step</b><div class="text" dangerouslySetInnerHTML=${{ __html: md(m.meta.plan || "", agentIds) }}></div></div>
 		${waiting && (me.perms.approve
 			? html`<input placeholder="Note (optional)" value=${note} onInput=${(e) => setNote(e.target.value)} style="width:100%;margin-bottom:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--text)" />
 				<div class="actions"><button class="btn approve" disabled=${busy} onClick=${() => go("continue")}>Continue</button><button class="btn" disabled=${busy} onClick=${() => go("close")}>Close case, no action</button><button class="btn reject" disabled=${busy} onClick=${() => go("abort")}>Abort</button></div>`
@@ -209,7 +209,7 @@ function WorkflowCard({ m, me, wfs, onDecision }) {
 function Message({ m, me, agentIds, onDecide, onOpen, onAction, wfs, onDecision }) {
 	const kind = m.meta.kind;
 	if (kind === "case") return html`<div class="msg" style="max-width:760px"><${CaseCard} m=${m} /></div>`;
-	if (kind === "workflow") return html`<${WorkflowCard} m=${m} me=${me} wfs=${wfs} onDecision=${onDecision} />`;
+	if (kind === "workflow") return html`<${WorkflowCard} m=${m} me=${me} wfs=${wfs} onDecision=${onDecision} agentIds=${agentIds} />`;
 	if (m.authorKind === "system" && kind === "notice") return html`<div class="notice">${m.text}${m.meta.link ? html` <button class="linkbtn open" onClick=${() => onOpen(m.meta.link)}>Open #${m.meta.link} →</button>` : ""}</div>`;
 	if (kind === "approval") return html`<${ApprovalCard} m=${m} me=${me} onDecide=${onDecide} />`;
 	if (kind === "delegation")

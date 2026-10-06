@@ -24,6 +24,13 @@ export IMAGE="localhost/crew-workspace:$(date +%Y%m%d-%H%M%S)"
 NS=ai-workspace
 rand() { openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 
+# Refuse to ship code that does not typecheck (only when dev dependencies are installed locally).
+if [ -d node_modules/typescript ] && [ "${SKIP_TYPECHECK:-}" != "1" ]; then
+  echo "==> typecheck"
+  podman run --rm -v "$PWD:/app:Z" -w /app docker.io/library/node:22-slim npx tsc -p . >/tmp/crew-tsc.log 2>&1 \
+    || { echo "typecheck failed:"; head -20 /tmp/crew-tsc.log; exit 1; }
+fi
+
 echo "==> build $IMAGE"
 podman build -q -t "$IMAGE" . >/dev/null
 podman save "$IMAGE" | sudo -n k3s ctr -n k8s.io images import - >/dev/null

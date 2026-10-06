@@ -24,6 +24,40 @@ Browser (Preact, no build) ──SSE/REST──▶ workspace (Node 22, one proce
 No OpenAI Agents SDK: inference is a plain model API behind `@earendil-works/pi-ai`; the agent loop,
 durability, queues and subagent machinery are Pi Durable's.
 
+## How it works
+
+![How it works: a person or alert opens a case channel, a Temporal workflow drives agents, agents use limited tools, humans approve changes, and the channel shows everything](docs/img/how-it-works.svg)
+
+1. A person asks in a channel, or an alert (a metric crossing a threshold) opens a **case channel** with a ticket.
+2. A **workflow** (Temporal) drives the process: diagnose, plan, wait for a person, act, verify, close. It survives restarts.
+3. **Agents** (Pi Durable conversations, each with its own model and tools) do the thinking and the work, and remember.
+4. Agents only act through **tools with limits** (read-only cluster access, repo branches, an isolated sandbox pod).
+5. Anything that changes a live system waits for a **human approval**. The channel shows every step as it happens.
+
+## Screens
+
+Plain wireframe renderings of the real UI (colour and theme removed; regenerate with `scripts/wireframes.mjs`).
+
+**Agents investigate, hand work to each other, and ask for approval.** Steps are collapsible, delegations are visible, and the approval card lists exactly what will change.
+
+![An incident channel: Ops is waiting for approval; the approval card shows target, source, reason and the change POOL_SIZE 0 to 4](docs/img/01-incident-approval.png)
+
+**An approver decides.** Only people with the approver role get *Approve* and *Reject*; everyone else sees that the work is waiting. The right panel keeps pending approvals, agent capabilities, workflows, memory and integrations in view.
+
+![The same channel as an approver: Approve and Reject buttons, a pending approvals panel, agent capability cards](docs/img/02-approver-view.png)
+
+**Agents answer with views, not walls of text.** A generated status board, a stat, and a chart, all built from a fixed catalog of components.
+
+![The insights channel: a status board of environments, a 5xx rate stat and a line chart](docs/img/03-insights-view.png)
+
+**An alert opens a case, and a workflow waits for a person.** The case channel carries the ticket; the workflow has already diagnosed and planned, and is paused until an approver continues, closes, or aborts.
+
+![A case channel with a workflow card: waiting for a decision with Continue, Close case and Abort buttons](docs/img/04-case-and-workflow.png)
+
+**Private chats stay private.** Visible only to their owner; what the agent remembers from a private chat stays in that chat.
+
+![A private chat with Ops, with a memory note scoped to this channel only](docs/img/05-private-chat.png)
+
 ## What works today
 
 - **Keycloak login** (realm `demo`, roles `viewer` / `operator` / `approver` / `admin`); the backend verifies
