@@ -1,9 +1,11 @@
 # Crew World: backlog
 
+**Done outside the milestones:** time-skipping tests of the live handoff watchdog (`test/handoff-timers.test.ts`, 5 tests; 2026-10-08).
+
 Each milestone: **goal**, **acceptance** (a command that must pass; numbers are targets until measured), **depends on**. Tick only with evidence in `PROGRESS.md`.
 
 - [ ] **M0 Skeleton and contracts.** `src/world/`: `VirtualClock`, `SeededRng` (state serializable), persistent `Scheduler` (priority queue), `Reducer` interface, `WorldPort`, per-world SQLite file with `world_events`, `snapshots`, `rollups`; `crew world new|run|status`; `npm run world:check`.
-  *Acceptance:* (a) same seed -> identical state hash after 30 virtual days, twice; (b) snapshot at day 10, resume to day 30 == uninterrupted run; (c) 365 virtual days of a trivial Tier-0 world in < 60 s wall; (d) events carry virtual time and a per-branch sequence; (e) summary events reach the main `events` log with `scope=synthetic`.
+  *Acceptance:* (a) same seed -> identical state hash after 30 virtual days, twice; (b) snapshot at day 10, resume to day 30 == uninterrupted run; (c) 365 virtual days of a trivial Tier-0 world in < 60 s wall; (d) events carry virtual time and a per-branch sequence; (e) summary events reach the main `events` log with `scope=synthetic`; (f) time semantics as in D2b: a timer set for +5 min fires at exactly +5 min of virtual time, and a run with nothing runnable advances without sleeping (property test).
 - [ ] **M1 IT-ops domain and problem catalog.** Services, dependencies, load curve; 7 problem types with causes, symptoms, right and wrong fixes; seeded arrival process.
   *Acceptance:* a Tier-0 "oracle" fixer resolves every problem type; a "naive" fixer makes at least 2 types worse (proves wrong fixes have consequences); same seed -> same incident list; 90 days produce a plausible, non-degenerate mix (property test on the distribution).
 - [ ] **M2 Synthetic tools and fault injection.** Adapters with the real tools' names/shapes answering from world state; injected faults (stale, wrong, slow, missing, prompt-injection fixture).
@@ -18,5 +20,5 @@ Each milestone: **goal**, **acceptance** (a command that must pass; numbers are 
   *Acceptance:* completes in slices with a kill -9 in between and still equals the uninterrupted hash; spend within budget; report lists degraded days; memory trees of agents stay within their byte budget.
 - [ ] **M7 Chaos and the org dry-run.** Noise profiles (plan Prompt 15), A/B scorecards; propose an org change, replay the last N days through it, show the diff.
   *Acceptance:* noise = 0 equals the control hash; a deliberately broken `must_inform` route is found and the fix removes the finding in the same deterministic test.
-- [ ] **M8 Engine experiments (optional).** Restate and/or DBOS behind `WorldPort`; compare determinism, throughput, operability. **First verify their current APIs.**
+- [ ] **M8 Engine experiments (optional).** Temporal's time-skipping environment (cheapest to try: already pinned, baseline measured, see README), and/or Restate and/or DBOS behind `WorldPort`; compare determinism, throughput, operability. **First verify their current APIs.**
   *Acceptance:* the M0 acceptance suite passes on the alternative adapter, or the report says exactly why not.

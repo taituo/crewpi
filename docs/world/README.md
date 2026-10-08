@@ -11,7 +11,7 @@ It is not a prediction of any real organization (plan B6). Results are labelled 
 ## How to make a simulation long
 A year of virtual work must cost seconds of wall time and cents of model money. Seven rules, in order of importance:
 
-1. **Virtual time jumps.** Discrete-event simulation: a priority queue of scheduled events; the clock leaps to the next one. No sleeping. One virtual day with no activity costs microseconds.
+1. **Virtual time jumps, like Temporal's time skipping.** Discrete-event simulation: a priority queue of scheduled events; when nothing is runnable the clock leaps to the next one. No sleeping. One virtual day with no activity costs microseconds. *Measured with Temporal's own time-skipping test environment (same SDK family we pin, 1.24.0): one actor waking every virtual day for 365 days took ~1.5 s of real time; our real handoff watchdog fired at exactly +5 min and +60 min of virtual time in 45-106 ms. See `test/handoff-timers.test.ts`.*
 2. **Tiered cognition.** Most of the world is not a language model.
    - *Tier 0, rules and statistics:* customers, traffic, failures and their causes (arrival processes from a seeded RNG), deploys, recoveries. Free and deterministic.
    - *Tier 1, scripted or tiny-model policies:* routine agent behaviour (acknowledge, triage by rule, standard fixes). Cheap.
@@ -45,11 +45,16 @@ A year of virtual work must cost seconds of wall time and cents of model money. 
 |---|---|---|
 | D1 | **One world = one SQLite file** (`worlds/<id>.sqlite`) with its own `world_events(branch, seq, vtime, type, actor, payload)`, snapshots, recorded responses, rollups. Only summaries go to the main `events` table. | A year is millions of events; keeps live tables clean; a fork is a file copy plus a branch row; a world can be deleted or archived whole. |
 | D2 | **Our own deterministic engine first**, behind a `WorldPort` interface. Restate or DBOS can be tried later as the executor behind the same port (M8). | Determinism, fork and replay need control of state and time. A durable-execution journal is not the same as domain time travel (plan B3, "Temporal replay is not time travel"). The Restate/DBOS APIs are **unverified here**; check them before M8. |
+| D2b | **Time semantics follow Temporal's time skipping**: the clock moves only when every actor is waiting; a timer for +5 min fires at exactly +5 min; real-time work (a model call) holds the clock. | The owner's analogy, and the property that makes long runs cheap and deterministic. |
 | D3 | **Temporal stays for live work only** (owner decision). The world does not use Temporal; its clock is virtual. | Two engines, one sentence: due date/human/many agents in the *live* system is Temporal; the simulation has its own clock. |
 | D4 | **First domain: IT operations** (services, deploys, incidents, tickets), not supply chain. A second domain (order-to-delivery, plan Prompt 15) comes after M6. | Reuses what exists: agents ops/developer/reviewer/insight, `fakes.ts` fixtures, handoffs, CaseContext, the checkout story. |
 | D5 | **Synthetic scope removes live tools** (deny by absence): the synthetic toolset is built from adapters over world state; no live adapter object exists there. A tripwire test tries every live tool. | Safety by absence, not by a check someone forgets. |
 | D6 | **Statistics are code.** Metrics are defined in one file, computed from events, tested against hand-calculated cases. Agents may narrate them, never produce them. | Plan: measure from events and end states, never from an agent's own report. |
 | D7 | The **game view** is a projection like the rest: the same events draw services as buildings, agents as characters, handoffs as walking between desks, incidents as fires. No state of its own. | One source of truth; the view can be rebuilt or replaced. |
+
+## Temporal's time-skipping as a possible engine (what we know)
+Verified here (Node 22, `@temporalio/testing` 1.24.0): time skipping works, our real workflow code runs unchanged, `env.sleep()` and `env.currentTimeMs()` exist, a year of one actor's daily timers is ~1.5 s. So a world *could* be a set of actor workflows on a time-skipping server, with no new dependency family.
+**Not verified, believed from the documentation, check before relying on it:** (a) it is a test server, not for production; (b) a long-lived workflow's history is size-limited, so actors need `continue-as-new`; (c) there is no fork or snapshot of a history, and state lives in the journal, not in a reducer we can hash or copy; (d) work done in a real activity (a model call) holds time skipping; (e) scale with thousands of actor workflows. Points (c) and the "Temporal replay is not time travel" rule are why D2 keeps our own engine first; the idea stays as a candidate executor in M8 and as a cheap way to test any *timer-driven live* logic today.
 
 ## The domain (M1), enough to be a world
 - **Services** (api, checkout, payments, search, db, queue) with health, load, version, config, dependencies.
