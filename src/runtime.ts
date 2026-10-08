@@ -7,7 +7,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { assertBudget } from "./budget.ts";
 import { acquireLease, type Lease } from "./lock.ts";
 import { createRegistry, Harness, watchEvents, type Conversation } from "@earendil-works/pi-durable";
-import { SUMMARY_SYSTEM, addLeaf, builder, fitView, leafCount, leafRawByEntry, stats, type Role } from "./optchat.ts";
+import { NODE_BYTES, SUMMARY_SYSTEM, addLeaf, builder, fitView, leafCount, leafRawByEntry, stats, type Role } from "./optchat.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { AGENTS, agentById, type AgentDef } from "./agents.ts";
 import { channelById } from "./channels.ts";
@@ -420,13 +420,15 @@ function setupSummarizer() {
 		: [...resolved.values()].find((r) => r.provider !== "demo");
 	builder.log = (m) => console.warn(`[memtree] ${m}`);
 	if (!ref) return; // scripted demo: extractive summaries only
-	builder.summarize = async (texts) => {
+	builder.summarize = async (texts, _level, retry) => {
 		if (ref.provider === "openrouter") await assertBudget(); // over budget: the builder falls back to extractive summaries
 		const model = models.getModel(ref.provider, ref.modelId);
 		if (!model) throw new Error("summarizer model not available");
+		// A line that came back too long is asked for again with the cut marker (models cannot count bytes).
+		const again = retry ? `\n\nYour previous line was ${Buffer.byteLength(retry.previous)} bytes, over the limit of ${NODE_BYTES}. Write the whole line again for the same chunks, cutting just enough of the least valuable items so that it ends before this cut:\n${retry.cut}| ← LIMIT` : "";
 		const msg = await models.complete(model, {
 			systemPrompt: SUMMARY_SYSTEM,
-			messages: [{ role: "user", content: `Chunk A:\n${texts[0]}\n\nChunk B:\n${texts[1]}`, timestamp: Date.now() }],
+			messages: [{ role: "user", content: `Chunk A:\n${texts[0]}\n\nChunk B:\n${texts[1]}${again}`, timestamp: Date.now() }],
 		});
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") throw new Error(msg.errorMessage ?? "summarizer error");
 		return textOf(msg.content).trim();
