@@ -1,0 +1,7 @@
+
+## Round 3 (QA agents, Muse Spark via opencode): delegation result return
+- `liveqa` (read-only drive of the live cluster as a user) found: an agent that delegates with `ask_agent` never heard the answer (msgs 97-101: Ops promised to report back, Developer answered, handoff `completed`, Ops never woken). Cause: nothing delivered a finished handoff to the requester. Fixed by the `return` consumer (commit "Deliver the outcome of a handoff...", tested first, 3 tests).
+- Re-test on the redeployed cluster (msgs 110-114, verified by me from the channel itself): new handoff ask:776 ops->developer, 4 events (requested, accepted, in_progress, completed), Developer answered in the channel, Ops posted the 5 lines ~7.8 s later, no duplicates.
+- Two QA rounds were wasted by my own briefs: I named a channel where Ops is not a member (the system notice said so correctly), and I asked a question Ops could answer from its memory of the old promise. A QA test of "does X get delivered" needs a fresh question each time.
+- Still open from QA: naming `@developer` in the human message makes both agents answer (dual dispatch, msgs 99+101); the old handoff's `resultRef` pointed at the direct answer; `createdAt` of agent messages is the task creation time, not the completion time (do not use it as latency).
+- `redteam` (9 attacks on the synthetic tools): all pass; my mutation check caught 8/8 mutations, so the tests are real. Merged as `test/world-tools-redteam.test.ts`.
