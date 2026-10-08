@@ -5,6 +5,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { assertBudget } from "./budget.ts";
+import { acquireLease, type Lease } from "./lock.ts";
 import { createRegistry, Harness, watchEvents, type Conversation } from "@earendil-works/pi-durable";
 import { SUMMARY_SYSTEM, addLeaf, builder, fitView, leafCount, leafRawByEntry, stats, type Role } from "./optchat.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -22,6 +23,7 @@ type ModelRef = { provider: string; modelId: string };
 export type Presence = { agentId: string; status: "idle" | "working" | "waiting_approval"; model: string; working: string[] };
 
 let harness: Harness;
+let lease: Lease | undefined;
 const models = createModels();
 const resolved = new Map<string, ModelRef>();
 const convs = new Map<string, Conversation>(); // `${channel}:${agent}`
@@ -473,6 +475,7 @@ export function inferenceInfo() {
 // ------------------------------------------------------------------ lifecycle
 
 export async function startRuntime() {
+	lease = acquireLease(config.dataDir); // fail fast if another process owns the agent storage
 	setupInference();
 	const registry = createRegistry();
 	for (const e of ALL_EXTENSIONS) registry.install(e);
@@ -497,4 +500,5 @@ export async function startRuntime() {
 
 export async function stopRuntime() {
 	await harness?.close(ctx);
+	lease?.release();
 }

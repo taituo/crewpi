@@ -58,4 +58,21 @@ CREATE TABLE IF NOT EXISTS organizations (
 			db.exec("CREATE INDEX IF NOT EXISTS messages_org ON messages(tenant_id, organization_id, channel_id, id)");
 		},
 	},
+	{
+		version: 3,
+		name: "realm-entity",
+		up: (db) => {
+			// Prompt 13 names a default realm and one entity for the migrated single-org install. BusinessRealm is a
+			// product grouping, not a Keycloak realm, and says nothing about who may see what.
+			db.exec(`
+CREATE TABLE IF NOT EXISTS business_realms (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), name TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS entities (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), realm_id TEXT NOT NULL REFERENCES business_realms(id),
+  name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'organization', created_at INTEGER NOT NULL);`);
+			db.prepare("INSERT OR IGNORE INTO business_realms (id, tenant_id, name, created_at) VALUES (?,?,?,?)").run("default", DEFAULT_TENANT, "Default realm", Date.now());
+			db.prepare("INSERT OR IGNORE INTO entities (id, tenant_id, realm_id, name, created_at) VALUES (?,?,?,?,?)").run("default", DEFAULT_TENANT, "default", "Default entity", Date.now());
+			addColumn(db, "organizations", "entity_id", "TEXT NOT NULL DEFAULT 'default'");
+		},
+	},
 ];

@@ -49,6 +49,7 @@ For each: files that will change, risks (IDs from `risk-register.md`), migration
 
 ### P0a Foundations - DONE on branch `feat/p0a-foundations`
 **Result:** `src/migrate.ts` (runner), `src/migrations.ts` (1 baseline, 2 tenant/org/provenance), approvals store `decided_by_sub`, messages get `actor_id/actor_type/source`, audit gets `actor_id`, server refuses the default `SESSION_SECRET` in OIDC mode, `npm test` preflights Node >= 22.19. 42/42 tests pass (35 existing + 7 new in `test/migrate.test.ts`); verified against a database written by the audited commit `873a01a`.
+**Also added in P0a:** default business realm and entity (migration 3), and a lease lock for the Pi storage (`src/lock.ts`; 4 tests).
 **Not done / deferred:** `requested_by_sub` is stored but not yet filled (the requesting human is not tracked until Prompt 05); separation of duties is therefore not enforced yet; no hash-chained audit; other modules (`channels`, `memory`, `optchat`, `sandbox`, `settings`) still create their own tables with `IF NOT EXISTS` and move into migrations as each is touched.
 - **Files:** new `src/migrate.ts`, `migrations/0001_baseline.sql`, `0002_tenant_org.sql`; edit `src/db.ts` (use runner), `src/server.ts` (decide route stores `sub`), `src/auth.ts` (refuse default `SESSION_SECRET` when `AUTH_MODE=oidc`).
 - **Migrations:** baseline; default tenant/org; `approvals.requested_by_sub`, `decided_by_sub`; `messages` provenance columns (nullable); `audit.actor_id`.
@@ -119,3 +120,16 @@ For each: files that will change, risks (IDs from `risk-register.md`), migration
 ## 7. Environment note
 
 The development machine has Node 18. Tests need Node ≥ 22.19 (native TypeScript execution, `node:sqlite`). Add an `.nvmrc`/`engines` check or a preflight in `npm test` in P0a so the failure is explicit instead of `ERR_UNKNOWN_FILE_EXTENSION`.
+
+## 8. Acceptance sketches for the later prompts (so nothing stays implicit)
+
+| Prompt | Acceptance in one paragraph | Must-have negative tests |
+|---|---|---|
+| 09 Rhythm / re-entry | Simulate a CEO away for a week (virtual clock): agents act within granted authority, hit two strategic uncertainties; on return the CEO gets a sourced briefing and two questions; answers are stored as guidance/proposals, never approvals; quiet hours and DM limits hold. | timezone/quiet-hour edge, ACL on briefing sources, restart mid-interview |
+| 10 Meetings | CEO and CTO human, other executives agents; agents prepare; CEO comments as advisor (no decision change); CEO later makes a separately authorized override on one project, scoped and audited; same meeting runs in a forked synthetic world with a different decision. | agent impersonation, external MCP agent without material access, "presence is not approval" |
+| 12 Teams representative | One entity's representative answers a status query and posts a proactive exception digest only when installation and authorization allow; another entity cannot read it; same correlationId visible in internal chat. Mock adapter unless live test tenant exists (say so). | cross-entity read, unauthorized proactive message, card action without policy check |
+| 13 Realm / federation | Sister entities A and B with different customer data: A may request one permitted service from B, cannot read B's secrets; revoking the grant mid-work blocks later reads and publications; search, memory summaries, reports, MCP calls, audit and branches all respect it. Single-org install migrates into default tenant/realm/entity without breaking DM privacy. | revoke mid-work, small-group aggregate leak, memory summary leak |
+| 06 World | order -> sale -> manufacturing/delivery -> finance changes stock, cash, obligations, tasks; same start + seed + recorded responses + events give an identical state hash; no live write API callable during simulation. | live-adapter tripwire |
+| 07 Time travel | 20 events, snapshot at 10, continue to 20, fork at 10, change decision, continue; both histories intact and different; recorded replay of the original gives the same hash; no side effects either branch. | reducer-version mismatch refused, branch isolation property tests |
+| 08 Simulation | Sales changes a delivery date, production is not told; simulator finds the missing must_inform/handoff route and shows the causal chain; fixing the rule makes the same deterministic test pass. | duplicate, late, missing approval, wrong org, branch isolation |
+| 15 Noise | false stock 120 vs truth 12 seen only by chosen agents while WorldState keeps 12; spread traceable; noise=0 equals control; 50-seed deterministic test; A/B (single-source vs two-source verification) comparison; sweep 0/1/5/10/20 % labelled experimental. | forged identity and prompt-injection fixture cannot bypass approval or tool policy |
