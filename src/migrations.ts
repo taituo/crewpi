@@ -118,4 +118,59 @@ CREATE INDEX IF NOT EXISTS org_nodes_v ON org_nodes(version_id);
 CREATE INDEX IF NOT EXISTS org_edges_v ON org_edges(version_id);`);
 		},
 	},
+	{
+		version: 5,
+		name: "events-handoffs-case",
+		up: (db) => {
+			db.exec(`
+CREATE TABLE IF NOT EXISTS events (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL DEFAULT 'default', organization_id TEXT NOT NULL DEFAULT 'default',
+  scope TEXT NOT NULL DEFAULT 'live', world_id TEXT, branch_id TEXT,
+  type TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1,
+  actor_id TEXT NOT NULL, actor_type TEXT NOT NULL, correlation_id TEXT NOT NULL, causation_id TEXT,
+  source_refs TEXT NOT NULL DEFAULT '[]', visibility TEXT NOT NULL, channel_id TEXT,
+  occurred_at INTEGER NOT NULL, payload TEXT NOT NULL DEFAULT '{}');
+CREATE INDEX IF NOT EXISTS events_channel ON events(channel_id, sequence);
+CREATE INDEX IF NOT EXISTS events_correlation ON events(correlation_id);
+CREATE TABLE IF NOT EXISTS outbox (
+  event_id TEXT NOT NULL REFERENCES events(event_id), destination TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+  PRIMARY KEY (event_id, destination));
+CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(status, next_attempt_at);
+CREATE TABLE IF NOT EXISTS inbox (
+  consumer TEXT NOT NULL, event_id TEXT NOT NULL, processed_at INTEGER NOT NULL, PRIMARY KEY (consumer, event_id));
+CREATE TABLE IF NOT EXISTS tasks (
+  task_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL DEFAULT 'default', organization_id TEXT NOT NULL DEFAULT 'default',
+  channel_id TEXT NOT NULL, title TEXT NOT NULL, owner TEXT, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','cancelled')),
+  due_at INTEGER, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS tasks_channel ON tasks(channel_id, status);
+CREATE TABLE IF NOT EXISTS handoffs (
+  handoff_id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL DEFAULT 'default', organization_id TEXT NOT NULL DEFAULT 'default',
+  channel_id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(task_id),
+  from_actor TEXT NOT NULL, to_actor TEXT NOT NULL, backup_actor TEXT, text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','accepted','rejected','in_progress','completed','failed','escalated','cancelled')),
+  depth INTEGER NOT NULL DEFAULT 1, parent_handoff_id TEXT, origin_sub TEXT, correlation_id TEXT NOT NULL, causation_id TEXT,
+  ack_by_at INTEGER, due_at INTEGER, requested_event_id TEXT, ack_event_id TEXT, result_ref TEXT, reason TEXT,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS handoffs_channel ON handoffs(channel_id, status);
+CREATE INDEX IF NOT EXISTS handoffs_recipient ON handoffs(channel_id, to_actor, status);
+CREATE TABLE IF NOT EXISTS conv_origin (
+  channel_id TEXT NOT NULL, agent_id TEXT NOT NULL, origin_sub TEXT, correlation_id TEXT NOT NULL,
+  depth INTEGER NOT NULL DEFAULT 0, handoff_id TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (channel_id, agent_id));
+CREATE TABLE IF NOT EXISTS case_facts (
+  fact_id TEXT PRIMARY KEY, case_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default', fact_key TEXT NOT NULL, statement TEXT NOT NULL,
+  source_refs TEXT NOT NULL DEFAULT '[]', confidence TEXT NOT NULL CHECK (confidence IN ('confirmed','reported','inferred','unverified')),
+  status TEXT NOT NULL DEFAULT 'current' CHECK (status IN ('current','superseded','retracted')),
+  supersedes TEXT, added_by TEXT NOT NULL, observed_at INTEGER NOT NULL, created_at INTEGER NOT NULL, event_id TEXT);
+CREATE INDEX IF NOT EXISTS case_facts_case ON case_facts(case_id, status);
+CREATE TABLE IF NOT EXISTS decisions (
+  decision_id TEXT PRIMARY KEY, case_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT 'default', decision_key TEXT NOT NULL, statement TEXT NOT NULL,
+  outcome TEXT NOT NULL, made_by TEXT NOT NULL, authority_ref TEXT, approval_id INTEGER, event_id TEXT,
+  state TEXT NOT NULL DEFAULT 'decided' CHECK (state IN ('proposed','decided','executed','reversed')), created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS decisions_case ON decisions(case_id);`);
+		},
+	},
 ];
