@@ -93,3 +93,7 @@ Full suite 189/189, tsc clean. Next: M3c recorded mode (tape) and budgets with d
 - **Budget**: units per agent per virtual day, rebuilt from `agent.shift` events at start (a restart mid-day does not refill it). When spent, the shift runs on the Tier 1 fallback, is marked `degraded` in the history and counted in the report. Zero budget never calls the model.
 Evidence: 8 tests in `test/world-tape-budget.test.ts`; 13 mutations, 11 caught at first; the two gaps (replay past the end of the tape; a recorded failure) got tests and a bug fix (the replayed failure lost the brain's name/cost, found by the new test).
 Not yet: a Tier 2 brain on a real model (M3d); several roles with handoffs/CaseContext as world events (M3e); the 30-day multi-agent acceptance.
+
+## 2026-10-08 M3d: Tier 2 brain (`src/world/model-brain.ts`, branch `feat/world-m3`)
+A language model with the synthetic tools over an OpenAI-compatible endpoint (the gateway): real tool names/parameters from `toolCatalog()`, sticky `x-session-id` per agent, key only in the Authorization header, turn cap, timeout, HTTP errors and broken tool arguments become errors the model or the shift sees. 6 tests against a local fake model server (no real call); a recorded fake-model run replays with zero requests.
+Mutation check by me: 12 planned, 7 ran before the slow run was cut (all 7 caught; "no timeout" is caught by the test hanging, which is a poor signal). The remaining 5 are handed to an opencode worker. Mistake: I used `pkill -f` again and killed my own shell (the lesson was already in my notes).

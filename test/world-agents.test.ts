@@ -79,7 +79,7 @@ test("two agents never collide, and each is attributed correctly", async () => {
 });
 
 test("the brain is blind by construction: it cannot import the world's secrets", () => {
-	for (const f of ["src/world/brains.ts", "src/world/agents.ts"]) {
+	for (const f of ["src/world/brains.ts", "src/world/agents.ts", "src/world/model-brain.ts"]) {
 		const src = readFileSync(f, "utf8");
 		for (const m of src.matchAll(/from\s+["']([^"']+)["']/g)) assert.doesNotMatch(m[1], /catalog|symptoms|itops\/state|itops\/spec/, `${f} imports ${m[1]}`);
 	}

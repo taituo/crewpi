@@ -209,6 +209,9 @@ function misreport(tool: string, text: string): string {
 	}
 }
 
+/** The tools an agent is offered: names and parameter names exactly as the real tools have them. */
+export const toolCatalog = () => Object.entries(TOOLS).map(([name, d]) => ({ name, params: [...d.params], write: d.write }));
+
 export class SyntheticTools {
 	private world: World<ItOpsState>;
 	private faults: FaultPlan;
