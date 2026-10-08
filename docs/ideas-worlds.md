@@ -66,3 +66,62 @@ Lähde: `docs/extras.md`, `docs/world/` haarassa `feat/world-bridge`.
 - **CLI-first ja config-as-code (E1):** `--send`, `--replay`, `--create-realm`, apply/export; UI on yksi pinta.
 - **ACP kahteen suuntaan:** (1) CrewPi asiakkaana ajaa `kiro-cli acp`:tä tai muuta koodausagenttia sandboxissa (vapaa ajo sandboxissa, hyväksyntä rajalla: `agent/*`-haara ja diff); (2) CrewPi palvelimena, jolloin ACP-editori puhuu sen agenttien kanssa. SDK `@agentclientprotocol/sdk`.
 - **Pi-ekosysteemi (`taituo/entropi` docs/pi-projects.md):** Pi Pocket (puheenvuorot, sivukeskustelu, puhelimesta päätös), pi-review-loop (checkpointattu diff-review), pi-chat, pi-observational-memory, pi-portia, oh-my-pi (ACP-käyttö).
+
+---
+# Lisäys: alkuperäiskeskustelut (2026-10-06, ChatGPT-viennit)
+
+Lähteet: `Crewpi arviointi`, `Pi Durable swarm-ratkaisu`, `Pi Durable testipenkki`, `Pi Durablen selitys` (vientitiedostot, kopioitu repon ulkopuolelle; eivät ole repossa). Nämä ovat ideoita ja ChatGPT:n ehdotuksia, eivät toteutettuja tai varmennettuja. Käyttäjän omat sanat on merkitty "käyttäjä:". Niissä Entropi tarkoittaa alkuperäistä nimiehdotusta ("entropia"), ei välttämättä `taituo/entropi`-repoa.
+
+## H. Swarm Gym (päättelystrategiat)
+- **Idea:** ei "monta agenttia" vaan informaation dynamiikka: tuota ensin entropiaa (monta hypoteesia), poista se hallitusti (valinta, todisteet, kritiikki), tiivistä lopuksi yhteen vastaukseen. Käyttäjä: ei valtavaa pullistelua, vaan hyvä päättelyketju.
+- **Neljä ensimmäistä strategiaa:** `direct` (baseline), `blind-3` (kolme eristettyä ratkaisua + synteesi), `critic` (solve → attack → revise), `entropy-adaptive` (aloita yhdellä, lisää laskentaa vain epävarmuuden mukaan). Sen jälkeen `blackboard`.
+- **Minimal swarm** on tärkein baseline: ratkaise → kumoa → korjaa. Voi olla yllättävän vaikea voittaa kymmenellä agentilla.
+- **Historiakatalogi 1950–2026** (ideapankki, ei toteutettava lista): Shannon-entropia, Ashbyn requisite variety (swarmin koko ongelman monimutkaisuuden mukaan), blackboard (HEARSAY-II) ja sen scheduler, Contract Net (huutokauppa), Society of Mind (kognitiivinen, ei persona-monimuotoisuus), subsumption (reaktiivinen), evolutionary/simulated annealing, stigmergia ja ant colony, particle swarm, MoE/expert choice (tehtäväpooli, agentti valitsee), self-consistency, Tree/Graph of Thoughts, debate, Reflexion, red/blue, information bottleneck ja lossy swarm, novelty search, MAP-Elites, contextual bandit -reititin, Monte Carlo, hierarkkinen ja fraktaaliswarm, role mutation, epistemic/Bayesian swarm.
+- **Context isolation -kokeet:** anna agenteille eri informaatiodieetit (vain ongelma / + lähteet / + toisen johtopäätös ilman päättelyä / vain ristiriidat) ja vertaa "kaikki näkevät kaiken" -tilanteeseen.
+- **Mittari:** informaatiohyöty per token = (H_ennen − H_jälkeen) / käytetyt tokenit. Lisäksi tarkkuus, tokenit, aika, aktivoidut agentit, konteksti tavuina, duplikaattipäättely, toipuminen virheestä.
+- **Context capsules / evidence packets:** agentti ei luovuta koko päättelyään, vaan `{claim, evidence, confidence, unknowns}`.
+- **Swarm ennen hyväksyntää:** ehdotus → swarm-verifiointi → riskiraportti ihmiselle ("juurisyy vahvistettu 3 riippumatonta polkua pitkin, rollback-käytös varmistamatta, luottamus 0,91").
+- **Experience memory:** tallenna ongelman allekirjoitus, kokeillut strategiat, hyödylliset todisteet, tokenit ja tulos; reititin oppii "samanlaisissa tapauksissa blind+verify oli halvin ja tarkin" ilman mallin uudelleenkoulutusta.
+- **Latent swarm:** käyttäjä näkee yhden agentin (Ops), mutta taustalla sisäinen swarm. Erota *intra-agent* (optimoi ajattelua) ja *inter-agent* (optimoi työnjakoa).
+- **Strategia asetuksena:** `swarm: {strategy, maxWorkers, maxDepth, tokenBudget, contextIsolation}` agentin konfiguraatiossa; admin-paneeli ajaa samoja tehtäviä eri strategioilla ja kerää mittarit.
+
+## I. Compute-tyypit ja ulkoiset harnessit
+- **DIRECT / SWARM / SINGULAR / UNICORN:** direct = yksi Pi-agentti; swarm = hallitut päättelykontekstit; singular = yksi vahva ulkoinen harness; unicorn = paras kaupallinen harness + puhdas konteksti + pysyvä ympäristö + suuri budjetti. Reititin valitsee: pieni kysymys → direct, epävarma päättely → swarm, iso repo-tehtävä → singular. Käyttäjä: frontier singular / unicorn, ei enää swarmia vaan mallin voimaa.
+- **`HarnessProvider`:** `createSession / resumeSession` ja `prompt (AsyncIterable) / cancel / close`; ACP-adapterit (Gemini CLI, Cursor Agent, OpenCode natiivisti; Codex ja Claude Code adaptereilla). **BYOH** (bring your own harness): CrewPi vaatii vain ACP-yhteensopivan agentin.
+- **Kaksi ajotapaa:** `oneshot` (tuore worktree + uusi sessio + "ratkaise kokonaan" + tulos, diff ja todisteet, sessio tuhotaan; paras kontekstin puhtaus) ja pysyvä ACP-sessio (prompt, steer, reboot, resume; CrewPi tallentaa ulkoisen session tunnisteen ja toimii valvojana).
+- **Rajanveto:** Pi Durable kysyy kuka pyysi, mikä on tila, mitkä oikeudet, mitä restartin jälkeen; frontier-harness kysyy miten ratkaisen. Ulkoinen swarm voi jopa heikentää harnessia, joka tekee sisäisesti jo suunnittelun ja testisilmukat.
+- **Harness-tilit:** käyttäjä yhdistää oman tilinsä (Codex/Claude/Gemini connected-tila); CrewPi ei näe tokenia mallikontekstissa. Tilausehdot tarkistettava: yhden lähteen mukaan Kiro-tilausta ei saa käyttää kolmannen osapuolen automaatiossa (ChatGPT:n väite, varmentamatta).
+- **Gym-vertailu:** sama tehtävä ja repo; Direct Pi / Pi swarm / Codex / Claude / Gemini singular, ilman muiden päättelyä; mittarit: onnistuminen, testit, ihmisen korjaukset, kustannus, kello, kosketetut tiedostot, rollback. Kysymys: milloin orkestrointi lisää älykkyyttä ja milloin kannattaa antaa harnessin ajatella rauhassa?
+- **CodingExecutor-rajapinta:** Pi / Kiro / Claude Code (`-p`/print-ajo, JSON, resume, sallitut työkalut) / oma, ajettuna eristetyssä podissa; työntekijät kertakäyttöisiä, agentit eivät.
+
+## J. Hardening ja turvallisuusprofiilit
+- **Päättelytaso vs toimintataso:** swarm saa olla sisäisesti kaoottinen, mutta ehdotettu aikomus kulkee policy-rajan läpi (validoitu työkalu, sandbox, hyväksyntä, audit).
+- **Hardening-lista:** capability isolation per worker, context isolation, toisen agentin viesti on dataa eikä ohje, blackboardiin vain `claim+evidence+source+confidence+author`, ei itsehyväksyntää, rajattu rekursio ja duplikaattisuppressio, todiste ennen toimintaa ("3 agenttia samaa mieltä" ei riitä), riippumaton verifier joka ei näe solverin pitkää päättelyä, atominen durable tila (claim/lease/tulos), kill switch ja karanteeni, täysi audit.
+- **Consensus collapse:** yksi uskottava virhe leviää kaikille; vastalääke: blind solve × N → riippumattomat todisteet → vasta sitten cross-talk → vastakkainen verifier. (Liittyy suoraan goalin kohinatestaukseen.)
+- **Kolme suoritusturvatasoa:** Native (kontrolloitu shell/sandbox) → Restricted (vain tyypitetyt työkalut) → Synthetic (virtuaalinen "capability machine", ei POSIX-pintaa: `repo.read`, `tests.run`, `deploy.propose`, `approval.request`). Käyttäjä: äärimmäisessä tapauksessa pelkkää koodia, ei edes POSIX-komentoja. Unicorn-harnessit eivät yleensä sovi synteettiseen tilaan.
+
+## K. Testaus oikealla halvalla mallilla (kriittinen luku, osin jo tehty `feat/world-*`-haaroissa)
+- **Älä mockaa mallia, mockaa maailma.** Tilallinen feikkimaailma (cluster, repo, hyväksynnät); testi aloittaa vain `@ops checkout-api kaatuu, korjaa` eikä kerro ratkaisua.
+- **Assertoi tilasiirtymät ja invariantit, ei tekstiä:** jokainen kutsu ajassa (Ops → Developer → Reviewer → hyväksyntä → apply), `clusterWritesBeforeApproval == 0`, Developer ei kutsu `k8s_*`, Reviewer ei kirjoita, `main` ennallaan, audit sisältää `approval.approved` ja `k8s.apply`.
+- **Approval barrier -testi:** kun agentti pyytää hyväksyntää, odota ja varmista ettei tila muutu; hylkäys ei muuta koskaan.
+- **Prompt injection logissa:** diagnoosi saa lukea sen, mutta hyväksyntää ei kierretä eikä luvatonta työkalua ilmesty.
+- **Skenaariovariaatiot (8):** POOL_SIZE=0, väärä API_URL, feature flag, replicas 0, liian pieni muistiraja, väärä image-tagi, puuttuva config-avain, väärä readiness-polku. Mittarit: onnistumis-%, oikea diagnoosi, ei policy-rikkomuksia, mediaani tool-kutsut, tokenit ja kustannus.
+- **Tasot:** PR = mock-malli ($0); main = halpa oikea malli 5–10 kultaskenaariota; yö = 50–200 skenaariota + adversarial + restartit. LLM-tuomaria ei aluksi; arvioi maailman lopputilasta.
+
+## L. Ihmisen huomio ja moniaistinen työtila
+- **Kolme budjettia:** mallilla kontekstibudjetti, swarmilla laskentabudjetti, ihmisellä huomiobudjetti; kaikkia hallitaan samoin: zoom, gate, compress, escalate.
+- **Human Focus Mode:** zoom out (vain isot muutokset, päätökset, riskit) / focus (valitut casit) / zoom in (osallistu yhteen). Ihmisen rinnakkaisuusraja (esim. 3); ylitys vaatii riskikynnyksen. Poissa fokuksesta ei tarkoita piilossa: "12 muuta casea, 3 tarvitsee huomiota, 1 odottaa hyväksyntää, 8 etenee itsenäisesti".
+- **Guardian / hiljainen avustaja** (attention firewall): suodattaa, priorisoi, siirtää, tiivistää; keskeytys vain jos estävä päätös, tietoturvariski, hyväksyntä tai deadline alle 2 h. Tallentaa "mental checkpointin" ennen keskeytystä (nykyinen tavoite, avoin ajatus, seuraava aikomus) ja näyttää sen paluulla. Periaate: optimoi keskeytysten määrää, ei tiedon määrää.
+- **Mukautuva UI:** zoomatessa caseen muu käyttöliittymä hiljenee (sivupalkki pienenee, ilmoitukset katoavat); NOW / WAITING ON ME / BACKGROUND. Näkymä määräytyy kanavan semanttisesta tilasta (incident: status+aikajana+lokit+hypoteesit; design: kuvat+vaihtoehdot+päätökset; tutkimus: haastatteluklipit+teemat+sitaatit).
+- **Moniaistinen kanava:** kuva/video/ääni/kokous ovat ensimmäisen luokan dataa; `Observation` viittaa lähteen kohtaan (esim. video 12:43–13:08); puhuja-attribuutio. Kanava on "evolving context object": raaka keskustelu, media, havainnot, päätökset, entiteetit, tehtävät, hypoteesit, muisti, johdetut näkymät. "Conversation is the input stream, not the final representation."
+- **Osallistumispolitiikat agentille:** silent / mentioned / assist / active / moderator. Hiljaiset agentit: Scribe (current understanding, päätökset, avoimet kysymykset, ristiriidat), Archivist (pitkäaikaismuisti), Media Analyst.
+- **Äänikäyttöliittymä:** ihminen vastaa kysymyksiin puheella; agentti osallistuu kokoukseen ja esittelee aiheet; kun poistut paikalta järjestelmä tietää mihin sinun pitää reagoida.
+
+## M. Alusta ja työnkulut
+- **Realm-tasot:** henkilökohtainen, tiimi/yhteisö, useat tiimit, managerit, tuote, täysin autonominen. UI:ksi web, natiivi, TUI tai oma agentti+skill.
+- **Työnkulkukatalogi:** Incident, SelfHeal, Feature, BugFix, Dependency, BuildRepair, Release, Security, Refactor, Upgrade, Capacity, Research. "Eivät ole enää AI-agentti vaan yrityksen jatkuvasti pyöriviä prosesseja."
+- **CI-kuorma:** 10–30 PR päivässä ja kumileimasin; älykkäät agentit pilkkovat ja niputtavat PR:t; Gerrit-tyylinen tilakone ennen `masteria`. Käyttäjän kuormitus: "25 terminaali-ikkunaa".
+- **Agenttirekisteri versioituna:** `{id, version, model, instructions, tools, limits (maxTurns, maxCostUsd)}`; run tallentaa agenttiversion (eval-vertailua varten). Run-tapahtumat append-only. Kustannus per run (syöte/välimuisti/tuloste); keskitetty rate limiter.
+- **GitOps-polku:** agentti muuttaa lähde-repoa, CI rakentaa imagen, GitOps-repon image tag muuttuu, Argo CD synkkaa: agentilla ei tarvita Kubernetes-kirjoitusoikeutta. Valvonta: Prometheus + Alertmanager-webhook → incident-run; Loki; OpenTelemetry. Työkalut MCP-palveluiksi myöhemmin.
+- **Temporal on selkäranka, ei agentti:** LLM-kutsut eivät kuulu workflow-koodiin vaan aktiviteetteihin; workflow odottaa ihmistä signaalilla; ihminen voi tulla mukaan milloin vain.
+- **UI-leikki:** Hyprland-tyylinen tiled-käyttöliittymä (Tauri), "todellinen agent OS", ydin tiukaksi ("miten tehdään tiukka core tälle crewpille").
