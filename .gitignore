@@ -6,3 +6,10 @@ dist/
 *.key
 *.log
 .DS_Store
+
+# secrets: never commit keys
+.env
+.env.*
+*.key
+*.pem
+secrets/
