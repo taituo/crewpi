@@ -125,3 +125,30 @@ test("history hides private chats unless asked, and rejects times it cannot read
 	assert.ok(Math.abs(parseWhen("-2h", 10_000_000) - (10_000_000 - 7_200_000)) === 0);
 	assert.throws(() => parseWhen("yesterday-ish"), /cannot read/);
 });
+
+test("handoffs, case and events can be read from the terminal (E1: nothing is UI-only)", async () => {
+	const data = join(dir, "work");
+	const e2 = { DATA_DIR: data };
+	// write a small history through the same services the server uses
+	const script = `
+		const { handoffs, cases, bus } = await import("./src/work/index.ts");
+		const { db } = await import("./src/db.ts");
+		db.exec("CREATE TABLE IF NOT EXISTS channels (id TEXT PRIMARY KEY, kind TEXT NOT NULL)");
+		const h = handoffs.request({ requestId: "ask:x1", channelId: "incidents", from: "ops", to: "developer", text: "fix the pool size", correlationId: "corr-cli" }).handoff;
+		handoffs.accept(h.handoffId, "runtime");
+		cases.addFact({ caseId: "incidents", key: "checkout.pool_size", statement: "POOL_SIZE is 0", sourceRefs: ["tool:k8s_configmap"], confidence: "confirmed", by: "ops" });
+		cases.addFact({ caseId: "incidents", key: "delivery.date", statement: "10 Oct", sourceRefs: ["message:1"], confidence: "reported", by: "sales" });
+		cases.addFact({ caseId: "incidents", key: "delivery.date", statement: "14 Oct", sourceRefs: ["message:2"], confidence: "reported", by: "production" });`;
+	await run(process.execPath, ["--input-type=module", "-e", script], { env: { ...env, ...e2 } });
+	const hs = await cli(["handoffs", "--channel", "#incidents"], e2);
+	assert.match(hs.out, /#incidents\s+ops -> developer\s+accepted\s+fix the pool size/);
+	assert.equal(JSON.parse((await cli(["handoffs", "--status", "completed", "--json"], e2)).out).length, 0);
+	const c = await cli(["case", "incidents"], e2);
+	assert.match(c.out, /responsible: developer/);
+	assert.match(c.out, /waiting: ops -> developer\s+accepted/);
+	assert.match(c.out, /CONFLICT delivery.date: "10 Oct" \(sales\)\s+vs\s+"14 Oct" \(production\)/);
+	assert.match(c.out, /fact \[confirmed\] checkout.pool_size: POOL_SIZE is 0\s+<- tool:k8s_configmap/);
+	const ev = await cli(["events", "--correlation", "corr-cli", "--json"], e2);
+	assert.deepEqual(JSON.parse(ev.out).map((e: any) => e.type), ["handoff.requested", "handoff.accepted"]);
+	assert.equal((await cli(["case"], e2)).code, 1);
+});

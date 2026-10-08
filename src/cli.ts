@@ -23,6 +23,9 @@ const HELP = `crew - command line for Crew
   crew validate -f <file>                           same as apply --dry-run
   crew export [<organization name or id>] [--format yaml|json] [-o file]
   crew orgs                                         list organizations
+  crew handoffs [--channel <name>] [--status requested,accepted,...] [--json]
+  crew case <channel> [--json]                      the shared case picture: who waits for whom, facts, conflicts, decisions
+  crew events [--channel <name>] [--correlation <id>] [--limit 100] [--json]   domain events (what happened to the work)
 
 Environment: DATA_DIR (default ./data), CREW_URL (default http://localhost:8080), CREW_USER (audit name).
 `;
@@ -34,7 +37,7 @@ const { values: v, positionals: pos } = parseArgs({
 		replay: { type: "boolean" }, start: { type: "string" }, end: { type: "string" }, channel: { type: "string" }, kind: { type: "string" }, json: { type: "boolean" }, "include-dm": { type: "boolean" }, limit: { type: "string" },
 		"create-realm": { type: "string" }, entity: { type: "string" },
 		file: { type: "string", short: "f" }, "dry-run": { type: "boolean" }, "no-adopt": { type: "boolean" },
-		format: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
+		format: { type: "string" }, status: { type: "string" }, correlation: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
 	},
 });
 
@@ -43,7 +46,7 @@ const die = (msg: string, code = 1): never => {
 	process.exit(code);
 };
 
-const COMMANDS = ["send", "replay", "create-realm", "apply", "validate", "export", "orgs", "help"];
+const COMMANDS = ["send", "replay", "create-realm", "apply", "validate", "export", "orgs", "handoffs", "case", "events", "help"];
 const cmd = pos[0] && COMMANDS.includes(pos[0]) ? pos[0] : v.send !== undefined ? "send" : v.replay ? "replay" : v["create-realm"] !== undefined ? "create-realm" : v.help || !pos.length ? "help" : die(`unknown command "${pos[0]}"\n\n${HELP}`);
 const rest = pos[0] === cmd ? pos.slice(1) : pos;
 
@@ -137,6 +140,33 @@ async function main() {
 			applyManifest(reg, actor, { realm: { name }, entities: v.entity ? [{ id: slug(v.entity), name: v.entity }] : [] });
 			store.audit(`cli:${who}`, "realm.create", { realm: slug(name), entity: v.entity ?? null }, `cli:${who}`);
 			return console.log(`realm ${slug(name)} ready${v.entity ? `, entity ${slug(v.entity)}` : ""}`);
+		}
+		case "handoffs": {
+			const { handoffs } = await import("./work/index.ts");
+			const list = handoffs.list({ channelId: v.channel?.replace(/^#/, ""), statuses: v.status?.split(",") as any, limit: v.limit ? Number(v.limit) : 100 });
+			if (v.json) return console.log(JSON.stringify(list, null, 2));
+			for (const h of list.reverse()) console.log(`${new Date(h.createdAt).toISOString().slice(0, 19).replace("T", " ")}  #${h.channelId}  ${h.from} -> ${h.to}  ${h.status}${h.reason ? ` (${h.reason})` : ""}  ${h.text.replace(/\s+/g, " ").slice(0, 70)}`);
+			return console.error(`${list.length} handoff(s)`);
+		}
+		case "case": {
+			const { cases } = await import("./work/index.ts");
+			const channel = (rest[0] ?? v.channel ?? die("usage: crew case <channel>")).replace(/^#/, "");
+			const c = cases.context(channel);
+			if (v.json) return console.log(JSON.stringify(c, null, 2));
+			console.log(`case #${channel}   responsible: ${c.responsible ?? "nobody"}`);
+			for (const a of c.awaiting) console.log(`  waiting: ${a.from} -> ${a.to}  ${a.acknowledged ? a.status : "sent, NOT acknowledged"}${a.overdue ? "  OVERDUE" : ""}  ${a.text}`);
+			for (const k of c.conflicts) console.log(`  CONFLICT ${k.key}: ${k.facts.map((f) => `"${f.statement}" (${f.addedBy})`).join("  vs  ")}`);
+			for (const t of c.orphanTasks) console.log(`  nobody is on: ${t.title}`);
+			for (const f of c.facts.current) console.log(`  fact [${f.confidence}] ${f.key}: ${f.statement}  <- ${f.sourceRefs.join(", ")}`);
+			console.log(`  ${c.facts.stale.length} stale, ${c.facts.unverified.length} unverified, ${c.decisions.all.length} decision(s)`);
+			return;
+		}
+		case "events": {
+			const { bus } = await import("./work/index.ts");
+			const list = bus.list({ channelId: v.channel?.replace(/^#/, ""), correlationId: v.correlation, limit: v.limit ? Number(v.limit) : 100 });
+			if (v.json) return console.log(JSON.stringify(list, null, 2));
+			for (const e of list) console.log(`${new Date(e.occurredAt).toISOString().slice(0, 19).replace("T", " ")}  #${String(e.channelId ?? "-").padEnd(12)} ${e.type.padEnd(20)} ${e.actorId}  ${e.correlationId.slice(0, 14)}`);
+			return console.error(`${list.length} event(s)`);
 		}
 		case "orgs": {
 			const { reg, actor } = await localContext();

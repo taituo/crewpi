@@ -298,6 +298,42 @@ function MemTree({ channelId, agentId, canOperate, onFlash }) {
 	</details>`;
 }
 
+function WorkPanel({ channel, agentsById, canOperate }) {
+	const [c, setC] = useState(null);
+	const [watch, setWatch] = useState("off");
+	const [err, setErr] = useState("");
+	useEffect(() => {
+		setC(null); setErr("");
+		if (channel.kind === "dm") return;
+		const load = () => {
+			if (document.hidden) return;
+			api(`/api/channels/${channel.id}/case`).then((d) => { setC(d); setErr(""); }).catch((e) => setErr(e.message));
+			api(`/api/handoffs?channel=${channel.id}`).then((d) => setWatch(d.watchdog)).catch(() => {});
+		};
+		load();
+		const t = setInterval(load, 4000);
+		return () => clearInterval(t);
+	}, [channel.id]);
+	const who = (id) => agentsById[id]?.name || id;
+	if (channel.kind === "dm") return html`<div class="empty" style="padding:0">Private chats have no shared case picture.</div>`;
+	if (err) return html`<div class="empty" style="padding:0">${err}</div>`;
+	if (!c) return html`<div class="empty" style="padding:0">Loading…</div>`;
+	const n = c.facts.current.length + c.facts.stale.length;
+	const nothing = !c.awaiting.length && !c.conflicts.length && !c.orphanTasks.length && !n && !c.decisions.all.length;
+	return html`<div class="notes">
+		${nothing && html`<div class="empty" style="padding:0">Nothing recorded yet. When an agent hands work over or records a fact, it shows here.</div>`}
+		${c.responsible && html`<div class="ui-sub">Responsible: <b>${who(c.responsible)}</b></div>`}
+		${c.awaiting.map((a) => html`<div class="note" key=${a.handoffId}><span class=${"chip " + (a.overdue ? "st-failed" : a.acknowledged ? "st-completed" : "")}>${a.acknowledged ? a.status.replace("_", " ") : "sent, not acknowledged"}${a.overdue ? " · overdue" : ""}</span> <b>${who(a.from)}</b> → <b>${who(a.to)}</b><div class="ui-sub">${a.text}</div>
+			${canOperate && html`<button class="linkbtn" onClick=${() => api(`/api/handoffs/${a.handoffId}/cancel`, { body: {} }).catch(() => {})}>cancel</button>`}</div>`)}
+		${c.conflicts.map((k) => html`<div class="note" key=${k.key}><span class="chip st-failed">conflict</span> <b>${k.key}</b>${k.facts.map((f) => html`<div class="ui-sub">${who(f.addedBy)}: ${f.statement} <span style="opacity:.7">[${f.sourceRefs.join(", ")}]</span></div>`)}</div>`)}
+		${c.orphanTasks.length > 0 && html`<div class="note"><span class="chip st-failed">nobody is on</span> ${c.orphanTasks.map((t) => html`<div class="ui-sub" key=${t.taskId}>${t.title}</div>`)}</div>`}
+		${c.facts.current.slice(0, 6).map((f) => html`<div class="note" key=${f.factId}><span class="chip">${f.confidence}</span> <b>${f.key}</b><div class="ui-sub">${f.statement}</div></div>`)}
+		${(c.facts.stale.length > 0 || c.facts.unverified.length > 0) && html`<div class="ui-sub">${c.facts.stale.length} stale · ${c.facts.unverified.length} unverified</div>`}
+		${c.decisions.all.slice(0, 3).map((d) => html`<div class="note" key=${d.decisionId}><span class=${"chip " + (d.outcome === "approved" ? "st-completed" : "st-failed")}>${d.outcome}</span> ${d.statement}</div>`)}
+		${watch === "off" && html`<div class="ui-sub">No time limits are enforced (Temporal is not connected).</div>`}
+	</div>`;
+}
+
 function AgentCard({ a, presence, channelId, canOperate, onStop, onFlash }) {
 	const p = presence[a.id] || { status: "idle" };
 	const label = { idle: "Idle", working: "Working", waiting_approval: "Waiting for approval" }[p.status];
@@ -523,6 +559,8 @@ function App() {
 			<div class="ctx-scroll">
 				<h3>Agents in #${channel.name}</h3>
 				${chAgents.map((a) => html`<${AgentCard} key=${a.id} a=${a} presence=${presence} channelId=${channel.id} canOperate=${me.perms.operate} onStop=${stop} onFlash=${flash} />`)}
+				<h3>Work <span style="text-transform:none;letter-spacing:0;font-weight:400">(who waits for whom)</span></h3>
+				<${WorkPanel} channel=${channel} agentsById=${me.agentsById} canOperate=${me.perms.operate} />
 				<h3>Workflows <span style="text-transform:none;letter-spacing:0;font-weight:400">(Temporal)</span></h3>
 				<div class="notes">
 					${!wf.available && html`<div class="empty" style="padding:0">Temporal is not connected.</div>`}
