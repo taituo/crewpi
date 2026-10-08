@@ -48,4 +48,4 @@ export interface WorldSpec<S> {
 	start(rng: Rng): Wake[];
 }
 
-export type RunReport = { fromDay: number; toDay: number; steps: number; events: number; wallMs: number; stopped: "done" | "max-steps" | "max-wall" };
+export type RunReport = { fromDay: number; toDay: number; steps: number; events: number; wallMs: number; stopped: "done" | "max-steps" | "max-wall" | "paused" };

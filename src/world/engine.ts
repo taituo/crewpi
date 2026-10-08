@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import type { Json, Rng, RngFactory, RunReport, Wake, NewWake, WorldEvent, WorldSpec } from "./types.ts";
+import type { Json, Rng, RngFactory, RunReport, StepContext, StepResult, Wake, WorldEvent, WorldSpec } from "./types.ts";
 
 export const SEC = 1000, MIN = 60 * SEC, HOUR = 60 * MIN, DAY = 24 * HOUR;
 
@@ -22,6 +22,8 @@ export type RunOptions = {
 	maxSteps?: number;      // budget: stop cleanly after this many steps
 	maxWallMs?: number;     // budget: stop cleanly after this much real time
 	onStep?: () => void;    // called inside the open batch (tests use it to simulate a crash)
+	/** Stop BEFORE a wake-up for which this returns true and leave it scheduled: the actor is driven from outside (see takeNext/applyStep). */
+	pauseOn?: (wake: Wake) => boolean;
 };
 
 const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
@@ -165,27 +167,14 @@ CREATE TABLE IF NOT EXISTS fault_log (id INTEGER PRIMARY KEY AUTOINCREMENT, vtim
 				if (!next || next.due > target) break;
 				if (o.maxSteps !== undefined && ran >= o.maxSteps) { stopped = "max-steps"; break; }
 				if (o.maxWallMs !== undefined && Date.now() - t0 >= o.maxWallMs) { stopped = "max-wall"; break; }
+				if (o.pauseOn && o.pauseOn({ actor: next.actor, at: next.due, kind: next.kind, data: JSON.parse(next.data) })) { stopped = "paused"; break; }
 				// The clock leaps to the wake-up. Every day boundary crossed on the way gets a snapshot of the unchanged state.
 				for (let d = this.lastSnapDay + 1; d * DAY <= next.due; d++) this.snapshot(d);
 				this.q.del.run(next.id);
 				this.clock = next.due;
-				const actor = this.spec.actors.find((a) => a.id === next.actor);
-				if (!actor) throw new Error(`a wake-up names an unknown actor "${next.actor}"`);
 				const wake: Wake = { actor: next.actor, at: next.due, kind: next.kind, data: JSON.parse(next.data) };
-				const res = actor.step({ now: this.clock, state: this.current as Readonly<S>, rng: this.actorRng(actor.id), wake });
-				this.dirtyRng.add(actor.id);
-				for (const e of res.events ?? []) {
-					const ev: WorldEvent = { branch: this.branch, seq: ++this.seq, vtime: this.clock, type: e.type, actor: e.actor, payload: e.payload ?? {} };
-					this.q.insEvent.run(ev.branch, ev.seq, ev.vtime, ev.type, ev.actor, JSON.stringify(ev.payload));
-					this.current = this.spec.reduce(this.current, ev);
-					this.chain = sha(this.chain + canonical([ev.seq, ev.vtime, ev.type, ev.actor, ev.payload]));
-				}
-				for (const w of res.wakes ?? []) {
-					const at = "at" in w ? w.at : this.clock + w.in;
-					if (!(at >= this.clock)) throw new Error(`an actor scheduled a wake-up in the past (${at} < ${this.clock})`);
-					this.insertWake({ actor: w.actor, at, kind: w.kind, data: w.data });
-				}
-				this.steps++; ran++;
+				this.runStep(wake);
+				ran++; // (applyResult has already counted the step)
 				o.onStep?.();
 				if (++inBatch >= BATCH) { this.commit(); this.db.exec("COMMIT"); this.db.exec("BEGIN"); inBatch = 0; }
 			}
@@ -202,6 +191,86 @@ CREATE TABLE IF NOT EXISTS fault_log (id INTEGER PRIMARY KEY AUTOINCREMENT, vtim
 			throw e;
 		}
 		return { fromDay, toDay: Math.floor(this.clock / DAY), steps: this.steps - fromSteps, events: this.seq - fromSeq, wallMs: Date.now() - t0, stopped };
+	}
+
+	/** One actor step from inside the loop: the actor decides, then the result becomes history. */
+	private runStep(wake: Wake) {
+		const actor = this.spec.actors.find((a) => a.id === wake.actor);
+		if (!actor) throw new Error(`a wake-up names an unknown actor "${wake.actor}"`);
+		this.applyResult(wake.actor, actor.step(this.contextFor(wake)));
+	}
+
+	/** Turns a step's result into history: events (stored, folded into the state and the hash) and new wake-ups. */
+	private applyResult(actorId: string, res: StepResult) {
+		if (this.rngs.has(actorId)) this.dirtyRng.add(actorId); // a driver that never asked for the actor's context used no randomness
+		for (const e of res.events ?? []) {
+			const ev: WorldEvent = { branch: this.branch, seq: ++this.seq, vtime: this.clock, type: e.type, actor: e.actor, payload: e.payload ?? {} };
+			this.q.insEvent.run(ev.branch, ev.seq, ev.vtime, ev.type, ev.actor, JSON.stringify(ev.payload));
+			this.current = this.spec.reduce(this.current, ev);
+			this.chain = sha(this.chain + canonical([ev.seq, ev.vtime, ev.type, ev.actor, ev.payload]));
+		}
+		for (const w of res.wakes ?? []) {
+			const at = "at" in w ? w.at : this.clock + w.in;
+			if (!(at >= this.clock)) throw new Error(`an actor scheduled a wake-up in the past (${at} < ${this.clock})`);
+			this.insertWake({ actor: w.actor, at, kind: w.kind, data: w.data });
+		}
+		this.steps++;
+	}
+
+	/** What an actor sees when it is woken: the same context the loop would give it. */
+	contextFor(wake: Wake): StepContext<S> {
+		return { now: this.clock, state: this.current as Readonly<S>, rng: this.actorRng(wake.actor), wake };
+	}
+
+	/** The next scheduled wake-up, if any. */
+	pending(): Wake | undefined {
+		const n = this.q.peek.get() as { due: number; actor: string; kind: string; data: string } | undefined;
+		return n ? { actor: n.actor, at: n.due, kind: n.kind, data: JSON.parse(n.data) } : undefined;
+	}
+
+	/**
+	 * Moves the clock forward to `ms`, writing the daily snapshots on the way. Time may not jump over a scheduled
+	 * wake-up: run() first (or take it). Used by drivers that spend virtual time outside the loop.
+	 */
+	advanceTo(ms: number) {
+		if (ms < this.clock) throw new Error(`time cannot go backwards (${ms} < ${this.clock})`);
+		const next = this.pending();
+		if (next && next.at < ms) throw new Error(`cannot jump over a scheduled wake-up (${next.actor}:${next.kind} at ${next.at}); run() to it first`);
+		this.db.exec("BEGIN");
+		try {
+			for (let d = this.lastSnapDay + 1; d * DAY <= ms; d++) this.snapshot(d);
+			this.clock = ms;
+			this.commit();
+			this.db.exec("COMMIT");
+		} catch (e) {
+			try { this.db.exec("ROLLBACK"); } catch { /* closed */ }
+			this.reload();
+			throw e;
+		}
+	}
+
+	/** Removes the next wake-up from the schedule and moves the clock to its time: the driver now owns that step. */
+	takeNext(): Wake {
+		const next = this.q.peek.get() as { id: number; due: number; actor: string; kind: string; data: string } | undefined;
+		if (!next) throw new Error("nothing is scheduled");
+		this.advanceTo(next.due);
+		this.q.del.run(next.id);
+		return { actor: next.actor, at: next.due, kind: next.kind, data: JSON.parse(next.data) };
+	}
+
+	/** Hands back the result of a step done outside the loop (a wake-up from takeNext). It becomes history at the current virtual time. */
+	applyStep(wake: Wake, res: StepResult) {
+		if (!this.spec.actors.some((a) => a.id === wake.actor)) throw new Error(`unknown actor "${wake.actor}"`);
+		this.db.exec("BEGIN");
+		try {
+			this.applyResult(wake.actor, res);
+			this.commit();
+			this.db.exec("COMMIT");
+		} catch (e) {
+			try { this.db.exec("ROLLBACK"); } catch { /* closed */ }
+			this.reload();
+			throw e;
+		}
 	}
 
 	/** The virtual time now (milliseconds since the world began). */
