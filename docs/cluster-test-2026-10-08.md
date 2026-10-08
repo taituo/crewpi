@@ -27,3 +27,28 @@ What this is: the combined code of all branches (`integration/test-deploy`: P0a 
 
 ## Not tested
 Temporal escalation live with a real model; attention/bets branch (not deployed); multi-user concurrency; cost and latency numbers; recovery after the pod is killed mid-handoff.
+
+## Reading the tester's run critically (opencode / Muse Spark, session read in full)
+The tester ran 7 checks with 8 real commands. Its report is honest (it flagged that the DM already existed and that the Insight reply corrected itself), but "7/7 PASS" is stronger than the evidence in places.
+
+| Check | Verdict on the evidence |
+|---|---|
+| 1 viewer cannot post | **Strong.** Real `403 your role is view-only` |
+| 2 owner can write to a DM | **Weak as a creation test.** `created:false`: it reused an existing DM, so DM *creation* was not exercised. The post was accepted and woke the real Ops agent |
+| 3 others get 404 on the DM | **Right but incomplete without a positive control.** A 404 for everyone would look the same. Verified by hand: the owner reads 3 messages, carol, dave and alice get 404 |
+| 4, 5 events and case of the DM: 404 | **Weak.** In a DM no handoff or fact can exist at all (the service refuses), so there was little to leak; the 404 comes from the channel visibility rule, not from the new code |
+| 6 nothing about the DM in handoffs/events | **Vacuous as written.** Handoffs and events never contain message text, so "secret not found" could not fail. The real vectors are listed below |
+| 7 Insight answers | **Passes, with a caveat.** The content is the demo's *fixture* data (one invented story), consistent with the cluster only through `markCheckoutFixed()`; and the reply starts with two visible self-corrections |
+
+The brief stated the expected result for every check. That invites confirmation: the tester reported the real HTTP codes, which keeps it honest, but a brief that does not say what to expect would be a better test.
+
+### Vectors it did not try, checked afterwards by hand
+| Vector | Result |
+|---|---|
+| Live SSE stream of a viewer and of an admin while the owner writes in the DM | 0 events naming the DM, 0 occurrences of the message text. **Positive control:** the owner's own stream carries the DM events and the text |
+| Presence while the DM agent works | `working: []` for everyone |
+| Agent memory written in the DM | Ops saved a note ("favourite colour is teal"); its scope is `channel:dm-...` and **only the owner sees it** (carol, dave, alice: 9 notes, none from the DM) |
+| Approvals and audit | no DM approvals; no audit line mentions the DM |
+
+### What it adds up to
+Privacy of the private chat holds on every path that was tried (REST, channel-scoped APIs, SSE, presence, memory, approvals, audit), and the one check that looked strongest in the report (6) proved the least. Not covered: a DM whose agent asks for a live-system approval (SECURITY.md says audit titles may then leak), and DM *creation*.
