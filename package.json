@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node src/server.ts",
-    "test": "node scripts/preflight.mjs && node --test test/*.test.ts"
+    "test": "node scripts/preflight.mjs && node --test test/*.test.ts",
+    "crew": "node src/cli.ts"
   },
   "dependencies": {
     "@earendil-works/chord": "1.0.4",
@@ -20,11 +21,15 @@
     "@temporalio/workflow": "1.24.0",
     "htm": "3.1.1",
     "jose": "6.1.0",
-    "preact": "10.27.2"
+    "preact": "10.27.2",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "bin": {
+    "crew": "bin/crew"
+  }
 }

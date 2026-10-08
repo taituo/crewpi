@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+import { parseArgs } from "node:util";
+import { readFileSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
+
+/**
+ * crew - drive Crew without the browser. The UI is one surface of the same operations.
+ *   send      talks to a running server over HTTP (agents are dispatched by it); dev logins only for now
+ *   the rest  act on the local data directory as its operator (like kubectl on a node): they go through the same
+ *             Registry service and checks as the HTTP API, never straight into tables, and write an audit entry.
+ */
+const HELP = `crew - command line for Crew
+
+  crew send <channel> <text...> --as <user> [--url http://localhost:8080] [--wait 60]
+  crew --send '#insights' -m "how is checkout?" --as alice          (quote '#': shells treat it as a comment)
+
+  crew replay [--start <when>] [--end <when>] [--channel <name>] [--kind message,approval,decision,audit] [--json] [--include-dm]
+      Read what happened, in order. This does not re-run anything.
+      <when>: 2026-10-08T10:00 | today | now | -90m | -2h | -3d
+
+  crew create-realm <name> [--entity <name>]       (or: crew --create-realm <name>)
+  crew apply -f <file.yaml|json> [--dry-run] [--no-adopt]
+  crew validate -f <file>                           same as apply --dry-run
+  crew export [<organization name or id>] [--format yaml|json] [-o file]
+  crew orgs                                         list organizations
+
+Environment: DATA_DIR (default ./data), CREW_URL (default http://localhost:8080), CREW_USER (audit name).
+`;
+
+const { values: v, positionals: pos } = parseArgs({
+	allowPositionals: true,
+	options: {
+		send: { type: "string" }, message: { type: "string", short: "m" }, as: { type: "string" }, url: { type: "string" }, wait: { type: "string" },
+		replay: { type: "boolean" }, start: { type: "string" }, end: { type: "string" }, channel: { type: "string" }, kind: { type: "string" }, json: { type: "boolean" }, "include-dm": { type: "boolean" }, limit: { type: "string" },
+		"create-realm": { type: "string" }, entity: { type: "string" },
+		file: { type: "string", short: "f" }, "dry-run": { type: "boolean" }, "no-adopt": { type: "boolean" },
+		format: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
+	},
+});
+
+const die = (msg: string, code = 1): never => {
+	console.error(`crew: ${msg}`);
+	process.exit(code);
+};
+
+const COMMANDS = ["send", "replay", "create-realm", "apply", "validate", "export", "orgs", "help"];
+const cmd = pos[0] && COMMANDS.includes(pos[0]) ? pos[0] : v.send !== undefined ? "send" : v.replay ? "replay" : v["create-realm"] !== undefined ? "create-realm" : v.help || !pos.length ? "help" : die(`unknown command "${pos[0]}"\n\n${HELP}`);
+const rest = pos[0] === cmd ? pos.slice(1) : pos;
+
+async function send() {
+	const channel = String(v.send ?? rest.shift() ?? "").replace(/^#/, "");
+	const text = (v.message ?? rest.join(" ")).trim();
+	const as = v.as ?? die("send needs --as <user> (a dev login such as alice, bob, carol, root)");
+	if (!channel || !text) die("usage: crew send <channel> <text...> --as <user>");
+	const base = (v.url ?? process.env.CREW_URL ?? "http://localhost:8080").replace(/\/$/, "");
+	const login = await fetch(`${base}/auth/login?as=${encodeURIComponent(as)}`, { redirect: "manual" }).catch((e) => die(`cannot reach ${base}: ${e.message}`));
+	const cookie = (login as Response).headers.getSetCookie?.().map((c) => c.split(";")[0]).join("; ");
+	if (!cookie) die(`login as "${as}" failed: the server is not in AUTH_MODE=dev or has no such dev user. Token login for real accounts is not built yet.`);
+	const api = (path: string, init: RequestInit = {}) => fetch(`${base}${path}`, { ...init, headers: { cookie, "x-requested-with": "crew", "content-type": "application/json" } });
+	const res = await api(`/api/channels/${encodeURIComponent(channel)}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+	const body: any = await res.json().catch(() => ({}));
+	if (!res.ok) die(`${res.status}: ${body.error ?? "request failed"}`);
+	console.log(`sent to #${channel} as ${as}; dispatched to: ${body.dispatchedTo?.join(", ") || "nobody (no @mention)"}`);
+	const waitS = Number(v.wait ?? 0);
+	if (waitS > 0 && body.dispatchedTo?.length) {
+		const seen = new Set<number>([body.message.id]);
+		const until = Date.now() + waitS * 1000;
+		let quietSince = Date.now();
+		while (Date.now() < until) {
+			await new Promise((r) => setTimeout(r, 1000));
+			const list: any = await (await api(`/api/channels/${encodeURIComponent(channel)}/messages`)).json();
+			let working = false;
+			for (const m of list.messages as any[]) {
+				if (m.id <= body.message.id || m.authorKind === "human") continue;
+				if (m.meta?.status === "working") working = true;
+				else if (!seen.has(m.id) && m.text) { seen.add(m.id); console.log(`\n${m.authorName}: ${m.text}`); quietSince = Date.now(); }
+			}
+			if (!working && Date.now() - quietSince > 4000 && seen.size > 1) break;
+		}
+	}
+}
+
+async function localContext() {
+	const { Registry } = await import("./org/registry.ts");
+	const { store } = await import("./db.ts");
+	const reg = new Registry();
+	const who = process.env.CREW_USER ?? userInfo().username;
+	const actor = { tenantId: "default", participantId: reg.ensureParticipant("default", "human", `cli:${who}`, `cli:${who}`), platformRoles: ["admin"], operator: true };
+	return { reg, store, actor, who };
+}
+
+async function replay() {
+	const { history, formatEntry, parseWhen } = await import("./cli/history.ts");
+	const entries = history({
+		start: parseWhen(v.start), end: parseWhen(v.end), channel: v.channel, includeDm: v["include-dm"],
+		kinds: v.kind?.split(",").map((s) => s.trim()).filter(Boolean), limit: v.limit ? Number(v.limit) : undefined,
+	});
+	if (v.json) console.log(JSON.stringify(entries, null, 2));
+	else {
+		for (const e of entries) console.log(formatEntry(e));
+		console.error(`${entries.length} event(s)${v["include-dm"] ? "" : "; private chats hidden"}`);
+	}
+}
+
+async function manifestApply(dry: boolean) {
+	const file = v.file ?? rest[0] ?? die("needs -f <file>");
+	const { parseManifest, applyManifest } = await import("./cli/manifest.ts");
+	const { reg, store, actor, who } = await localContext();
+	let plan;
+	try {
+		plan = applyManifest(reg, actor, parseManifest(readFileSync(file, "utf8"), file), { dryRun: dry, adopt: !v["no-adopt"] });
+	} catch (e: any) {
+		for (const f of e.findings ?? []) console.error(`  ${f.severity}: ${f.message}`);
+		die(e.message);
+	}
+	if (plan!.realm) console.log(`realm ${plan!.realm}${dry ? " (dry run)" : ""}`);
+	for (const o of plan!.organizations) {
+		console.log(`organization "${o.name}": ${o.action}${o.adopted ? ", adopted" : ""}${dry && o.action !== "unchanged" ? " (dry run, nothing written)" : ""}`);
+		for (const f of o.findings) console.log(`  ${f.severity}: ${f.message}`);
+	}
+	if (!dry) store.audit(`cli:${who}`, "config.apply", { file, organizations: plan!.organizations.map((o) => `${o.name}:${o.action}`) }, `cli:${who}`);
+	if (plan!.organizations.some((o) => o.findings.some((f) => f.severity === "error"))) process.exit(1);
+}
+
+async function main() {
+	switch (cmd) {
+		case "help": return console.log(HELP);
+		case "send": return send();
+		case "replay": return replay();
+		case "validate": return manifestApply(true);
+		case "apply": return manifestApply(!!v["dry-run"]);
+		case "create-realm": {
+			const name = (v["create-realm"] || rest.join(" ")).trim() || die("usage: crew create-realm <name> [--entity <name>]");
+			const { applyManifest } = await import("./cli/manifest.ts");
+			const { reg, store, actor, who } = await localContext();
+			const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+			applyManifest(reg, actor, { realm: { name }, entities: v.entity ? [{ id: slug(v.entity), name: v.entity }] : [] });
+			store.audit(`cli:${who}`, "realm.create", { realm: slug(name), entity: v.entity ?? null }, `cli:${who}`);
+			return console.log(`realm ${slug(name)} ready${v.entity ? `, entity ${slug(v.entity)}` : ""}`);
+		}
+		case "orgs": {
+			const { reg, actor } = await localContext();
+			for (const o of reg.listOrgs(actor)) console.log(`${o.id}\t${o.name}\t${o.currentVersionId ? "adopted" : "draft only"}`);
+			return;
+		}
+		case "export": {
+			const { exportManifest } = await import("./cli/manifest.ts");
+			const { reg, actor } = await localContext();
+			const all = reg.listOrgs(actor);
+			const want = rest[0];
+			const picked = want ? all.filter((o) => o.id === want || o.name === want) : all;
+			if (!picked.length) die(want ? `no organization "${want}"` : "no organizations");
+			const text = exportManifest(reg, actor, picked.map((o) => o.id), v.format === "json" ? "json" : "yaml");
+			if (v.output) { writeFileSync(v.output, text); return console.log(`wrote ${v.output}`); }
+			return process.stdout.write(text);
+		}
+	}
+}
+
+main().catch((e) => die(e.message ?? String(e)));

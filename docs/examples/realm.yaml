@@ -1,0 +1,21 @@
+realm:
+  name: Acme Group
+entities:
+  - id: acme-hq
+    name: Acme HQ
+organizations:
+  - name: Acme Ops
+    entity: acme-hq
+    nodes:
+      - {kind: capability, name: org.admin}
+      - {kind: team, name: Exec}
+      - {kind: team, name: Ops}
+    edges:
+      - {type: has_access_to, from: "team:Exec", to: "capability:org.admin"}
+      - {type: reports_to, from: "team:Ops", to: "team:Exec"}
+      - {type: responsible_for, from: "team:Ops", to: "capability:org.admin"}
+    members:
+      - {participant: "human:alice", node: "team:Exec"}
+      - {participant: "agent:ops", node: "team:Ops"}
+    agents:
+      - {participant: "agent:ops", model: "openai/gpt-5.6-terra", instructions: "You are SRE.", tools: [k8s]}

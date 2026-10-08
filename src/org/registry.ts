@@ -54,6 +54,7 @@ export class Registry {
 
 	/** Reading needs a place in the organization (or, before its first version is adopted, the platform admin role). Else: 404. */
 	private readable(actor: Actor, o: Row): boolean {
+		if (actor.operator) return true;
 		return o.current_version_id ? this.heldNodes(actor, o).size > 0 : actor.platformRoles.includes("admin");
 	}
 
@@ -70,6 +71,7 @@ export class Registry {
 	}
 
 	can(actor: Actor, orgId: string, cap: Capability): boolean {
+		if (actor.operator) return true;
 		const g = this.effectiveGrants(actor, orgId);
 		const has = (c: string) => g.some((x) => x.type === "has_access_to" && x.targetKind === "capability" && x.target === c);
 		return has("org.admin") || (cap === "org.edit" && has("org.edit"));
@@ -97,7 +99,7 @@ export class Registry {
 	 * organization yet to hold a graph grant. The draft must be filled and adopted before it grants anything.
 	 */
 	createOrg(actor: Actor, o: { name: string; entityId?: string; id?: string }) {
-		if (!actor.platformRoles.includes("admin")) throw new RegistryError(403, "creating an organization needs the admin role");
+		if (!actor.operator && !actor.platformRoles.includes("admin")) throw new RegistryError(403, "creating an organization needs the admin role");
 		const name = o.name.trim();
 		if (name.length < 2 || name.length > 80) throw new RegistryError(400, "name must be 2-80 characters");
 		const orgId = o.id ?? id("org");
@@ -118,10 +120,10 @@ export class Registry {
 	}
 
 	/** New draft, copied from `from` (default: the adopted version). Needs org.edit. */
-	createDraft(actor: Actor, orgId: string, from?: string, note = "") {
+	createDraft(actor: Actor, orgId: string, from?: string, note = "", opts: { empty?: boolean } = {}) {
 		const o = this.org(actor, orgId);
 		this.require(actor, orgId, "org.edit");
-		const src = from ?? o.current_version_id;
+		const src = opts.empty ? null : (from ?? o.current_version_id);
 		if (src) this.version(actor, orgId, src);
 		return this.tx(() => ({ versionId: this.newVersion(actor, orgId, src ?? null, note) }));
 	}
@@ -176,7 +178,7 @@ export class Registry {
 	applyOps(actor: Actor, orgId: string, versionId: string, ops: Op[]) {
 		const v = this.version(actor, orgId, versionId);
 		if (v.status !== "draft") throw new RegistryError(409, `version ${v.number} is ${v.status}; make a new draft to change it`);
-		const bootstrap = !this.org(actor, orgId).current_version_id && actor.platformRoles.includes("admin"); // the first draft of a new org
+		const bootstrap = !this.org(actor, orgId).current_version_id && (actor.operator || actor.platformRoles.includes("admin")); // the first draft of a new org
 		if (!bootstrap) this.require(actor, orgId, "org.edit");
 		if (ops.length > 500) throw new RegistryError(400, "at most 500 operations per call");
 		this.tx(() => {
@@ -287,7 +289,7 @@ export class Registry {
 	adopt(actor: Actor, orgId: string, versionId: string) {
 		const v = this.version(actor, orgId, versionId);
 		const o = this.org(actor, orgId);
-		const bootstrap = !o.current_version_id && actor.platformRoles.includes("admin");
+		const bootstrap = !o.current_version_id && (actor.operator || actor.platformRoles.includes("admin"));
 		if (!bootstrap) this.require(actor, orgId, "org.admin");
 		if (v.status !== "draft") throw new RegistryError(409, `version ${v.number} is already ${v.status}`);
 		const findings = this.validate(actor, orgId, versionId);

@@ -12,7 +12,13 @@ export const edgeClass = (t: string): "descriptive" | "authoritative" => ((AUTHO
 export const isKnownEdge = (t: string) => (DESCRIPTIVE_EDGES as readonly string[]).includes(t) || (AUTHORITATIVE_EDGES as readonly string[]).includes(t) || /^custom:[a-z][a-z0-9_]{1,30}$/.test(t);
 
 /** Who is asking, as resolved by the server from the session (never from the request body). */
-export type Actor = { tenantId: string; participantId: string; platformRoles: string[] };
+export type Actor = {
+	tenantId: string;
+	participantId: string;
+	platformRoles: string[];
+	/** Set only by the local CLI (someone with the data directory is the operator anyway). HTTP and MCP never set it. */
+	operator?: boolean;
+};
 
 export type Op =
 	| { op: "addNode"; kind: NodeKind; name: string; attrs?: Record<string, unknown> }
