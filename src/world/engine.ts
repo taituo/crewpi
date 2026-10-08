@@ -17,6 +17,7 @@ export const SEC = 1000, MIN = 60 * SEC, HOUR = 60 * MIN, DAY = 24 * HOUR;
 export type OpenOptions<S> = { spec: WorldSpec<S>; seed: string; rng: RngFactory; name?: string; quiet?: boolean };
 export type RunOptions = {
 	days?: number;          // run this many virtual days from now
+	untilMs?: number;       // or: run until this exact virtual time (milliseconds since the world began)
 	untilDay?: number;      // or: run until this absolute virtual day
 	maxSteps?: number;      // budget: stop cleanly after this many steps
 	maxWallMs?: number;     // budget: stop cleanly after this much real time
@@ -62,7 +63,9 @@ CREATE TABLE IF NOT EXISTS world_events (branch TEXT NOT NULL, seq INTEGER NOT N
 CREATE TABLE IF NOT EXISTS snapshots (branch TEXT NOT NULL, day INTEGER NOT NULL, vtime INTEGER NOT NULL, seq INTEGER NOT NULL, state TEXT NOT NULL, chain TEXT NOT NULL, PRIMARY KEY (branch, day)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS schedule (id INTEGER PRIMARY KEY AUTOINCREMENT, due INTEGER NOT NULL, actor TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS schedule_due ON schedule(due, id);
-CREATE TABLE IF NOT EXISTS actor_rng (actor TEXT PRIMARY KEY, state TEXT NOT NULL) WITHOUT ROWID;`);
+CREATE TABLE IF NOT EXISTS actor_rng (actor TEXT PRIMARY KEY, state TEXT NOT NULL) WITHOUT ROWID;
+-- What the simulation did to its own tools (stale, wrong, missing...). Private: never shown to an agent, never part of the history hash.
+CREATE TABLE IF NOT EXISTS fault_log (id INTEGER PRIMARY KEY AUTOINCREMENT, vtime INTEGER NOT NULL, tool TEXT NOT NULL, args TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');`);
 		const meta = (k: string) => (db.prepare("SELECT value FROM meta WHERE key = ?").get(k) as { value: string } | undefined)?.value;
 		const w = new World<S>(db, o, o.name ?? basename(path).replace(/\.sqlite$/, ""));
 		w.prepare();
@@ -153,7 +156,7 @@ CREATE TABLE IF NOT EXISTS actor_rng (actor TEXT PRIMARY KEY, state TEXT NOT NUL
 
 	run(o: RunOptions = {}): RunReport {
 		const t0 = Date.now(), fromDay = Math.floor(this.clock / DAY), fromSteps = this.steps, fromSeq = this.seq;
-		const target = o.untilDay !== undefined ? o.untilDay * DAY : this.clock + (o.days ?? 0) * DAY;
+		const target = o.untilMs ?? (o.untilDay !== undefined ? o.untilDay * DAY : this.clock + (o.days ?? 0) * DAY);
 		let stopped: RunReport["stopped"] = "done", inBatch = 0, ran = 0;
 		this.db.exec("BEGIN");
 		try {
@@ -199,6 +202,38 @@ CREATE TABLE IF NOT EXISTS actor_rng (actor TEXT PRIMARY KEY, state TEXT NOT NUL
 			throw e;
 		}
 		return { fromDay, toDay: Math.floor(this.clock / DAY), steps: this.steps - fromSteps, events: this.seq - fromSeq, wallMs: Date.now() - t0, stopped };
+	}
+
+	/** The virtual time now (milliseconds since the world began). */
+	now(): number { return this.clock; }
+
+	/**
+	 * Does something to the world right now, in virtual time: schedules the wake-up at the current moment, runs exactly
+	 * that, and returns the events it caused. This is how a tool call becomes part of the history.
+	 */
+	execute(w: Omit<Wake, "at">): WorldEvent[] {
+		const from = this.seq;
+		this.scheduleAt({ ...w, at: this.clock });
+		this.run({ untilMs: this.clock });
+		return this.eventsSince(from);
+	}
+
+	eventsSince(seq: number): WorldEvent[] {
+		return (this.db.prepare("SELECT seq, vtime, type, actor, payload FROM world_events WHERE branch = ? AND seq > ? ORDER BY seq").all(this.branch, seq) as any[]).map((r) => ({ branch: this.branch, seq: r.seq, vtime: r.vtime, type: r.type, actor: r.actor, payload: JSON.parse(r.payload) as Record<string, Json> }));
+	}
+
+	/** Numbers tool calls (for reproducible fault draws); survives a restart. */
+	nextCall(): number {
+		const cur = Number((this.db.prepare("SELECT value FROM meta WHERE key = 'tool_calls'").get() as { value: string } | undefined)?.value ?? 0) + 1;
+		this.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('tool_calls', ?)").run(String(cur));
+		return cur;
+	}
+
+	logFault(f: { tool: string; args: unknown; kind: string; detail?: string }) {
+		this.db.prepare("INSERT INTO fault_log (vtime, tool, args, kind, detail) VALUES (?,?,?,?,?)").run(this.clock, f.tool, JSON.stringify(f.args ?? {}), f.kind, f.detail ?? "");
+	}
+	faultLog(): { id: number; vtime: number; tool: string; args: string; kind: string; detail: string }[] {
+		return this.db.prepare("SELECT id, vtime, tool, args, kind, detail FROM fault_log ORDER BY id").all() as any[];
 	}
 
 	state(): S { return this.current; }

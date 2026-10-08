@@ -59,6 +59,12 @@ export function reduce(s: ItOpsState, e: WorldEvent): ItOpsState {
 			if (p.outcome === "worse") { i.worse++; i.severity = Math.min(3, i.severity + 1) as Severity; s.stats.worse++; }
 			break;
 		}
+		case "action.performed": {
+			// What an action does to the world regardless of any incident (a scale-up changes the replica count).
+			const a = p.action as Action;
+			if (a.type === "scale" && a.service && a.replicas) s.replicas[a.service] = a.replicas;
+			break;
+		}
 		case "incident.worsened": {
 			const i = s.incidents[p.id];
 			if (i) { i.severity = p.severity; i.escalations++; }

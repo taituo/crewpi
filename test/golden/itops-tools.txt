@@ -1,0 +1,112 @@
+=== bad_config (3h after it began)
+--- k8s_pods {"namespace":"prod"}
+api-dd0a2118b-13f25  1/1  Running  restarts=0  running  age=3d
+api-dd0a2118b-ccb35  1/1  Running  restarts=0  running  age=3d
+checkout-83de430ed-1e834  0/1  Running  restarts=18  waiting:CrashLoopBackOff  age=3h
+checkout-83de430ed-b980a  0/1  Running  restarts=18  waiting:CrashLoopBackOff  age=3h
+payments-b616e0a16-49788  1/1  Running  restarts=0  running  age=3d
+payments-b616e0a16-cfdd8  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-79338  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-cca6a  1/1  Running  restarts=0  running  age=3d
+db-99a6e80f2-d7708  1/1  Running  restarts=0  running  age=3d
+db-99a6e80f2-cfade  1/1  Running  restarts=0  running  age=3d
+queue-d001da78f-f1994  1/1  Running  restarts=0  running  age=3d
+queue-d001da78f-3134f  1/1  Running  restarts=0  running  age=3d
+--- k8s_events {"namespace":"prod"}
+3h ago  Warning  BackOff  Pod/checkout-83de430ed-1e834  x18  Back-off restarting failed container
+--- k8s_deployments {"namespace":"prod"}
+api  ready=2/2  image=registry.local/api:v141  configmaps=api-config
+checkout  ready=0/2  image=registry.local/checkout:v141  configmaps=checkout-config
+payments  ready=2/2  image=registry.local/payments:v141  configmaps=payments-config
+search  ready=2/2  image=registry.local/search:v141  configmaps=search-config
+db  ready=2/2  image=registry.local/db:v141  configmaps=db-config
+queue  ready=2/2  image=registry.local/queue:v141  configmaps=queue-config
+--- k8s_configmap {"namespace":"prod","name":"checkout-config"}
+POOL_SIZE=0
+FEATURE_NEW_CART=true
+REGION=eu-north-1
+--- jira_search {}
+OPS-101  [Open]  Medium  Unassigned  3h ago  checkout: checkout error rate 100%
+--- grafana_query {"metric":"checkout_error_rate","minutes":30}
+checkout_error_rate (%) last 30 min: min=100 max=100 latest=100  first=100
+points: 02:30=100 02:35=100 02:40=100 02:45=100 02:50=100 02:55=100 03:00=100
+--- k8s_logs
+02:57 level=info msg="request served" path=/health status=200
+02:58 level=info msg="request served" path=/health status=200
+02:59 level=info msg="request served" path=/health status=200
+03:00 FATAL database pool size must be >0 (POOL_SIZE=0)
+03:00 container exited with code 1; back-off restarting
+=== dependency_down (3h after it began)
+--- k8s_pods {"namespace":"prod"}
+api-dd0a2118b-13f25  1/1  Running  restarts=0  running  age=3d
+api-dd0a2118b-ccb35  1/1  Running  restarts=0  running  age=3d
+checkout-83de430ed-1e834  0/1  Running  restarts=0  running  age=3d
+checkout-83de430ed-b980a  0/1  Running  restarts=0  running  age=3d
+payments-b616e0a16-49788  1/1  Running  restarts=0  running  age=3d
+payments-b616e0a16-cfdd8  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-79338  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-cca6a  1/1  Running  restarts=0  running  age=3d
+db-99a6e80f2-d7708  0/1  Running  restarts=4  running (last exit 1 Error)  age=3d
+db-99a6e80f2-cfade  0/1  Running  restarts=4  running (last exit 1 Error)  age=3d
+queue-d001da78f-f1994  1/1  Running  restarts=0  running  age=3d
+queue-d001da78f-3134f  1/1  Running  restarts=0  running  age=3d
+--- k8s_events {"namespace":"prod"}
+3h ago  Warning  Unhealthy  Pod/checkout-83de430ed-1e834  x22  Readiness probe failed: dial tcp db:5432: connect: connection refused
+--- k8s_deployments {"namespace":"prod"}
+api  ready=2/2  image=registry.local/api:v141  configmaps=api-config
+checkout  ready=0/2  image=registry.local/checkout:v141  configmaps=checkout-config
+payments  ready=2/2  image=registry.local/payments:v141  configmaps=payments-config
+search  ready=2/2  image=registry.local/search:v141  configmaps=search-config
+db  ready=0/2  image=registry.local/db:v141  configmaps=db-config
+queue  ready=2/2  image=registry.local/queue:v141  configmaps=queue-config
+--- k8s_configmap {"namespace":"prod","name":"checkout-config"}
+POOL_SIZE=20
+FEATURE_NEW_CART=true
+REGION=eu-north-1
+--- jira_search {}
+OPS-101  [Open]  Medium  Unassigned  3h ago  checkout: checkout error rate 90%
+--- grafana_query {"metric":"checkout_error_rate","minutes":30}
+checkout_error_rate (%) last 30 min: min=90 max=90 latest=90  first=90
+points: 02:30=90 02:35=90 02:40=90 02:45=90 02:50=90 02:55=90 03:00=90
+--- k8s_logs
+02:57 level=info msg="request served" path=/health status=200
+02:58 level=info msg="request served" path=/health status=200
+02:59 level=info msg="request served" path=/health status=200
+03:00 connection refused: db:5432
+03:00 upstream db health check failing
+=== noisy_alert (3h after it began)
+--- k8s_pods {"namespace":"prod"}
+api-dd0a2118b-13f25  1/1  Running  restarts=0  running  age=3d
+api-dd0a2118b-ccb35  1/1  Running  restarts=0  running  age=3d
+checkout-83de430ed-1e834  1/1  Running  restarts=0  running  age=3d
+checkout-83de430ed-b980a  1/1  Running  restarts=0  running  age=3d
+payments-b616e0a16-49788  1/1  Running  restarts=0  running  age=3d
+payments-b616e0a16-cfdd8  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-79338  1/1  Running  restarts=0  running  age=3d
+search-648e336e2-cca6a  1/1  Running  restarts=0  running  age=3d
+db-99a6e80f2-d7708  1/1  Running  restarts=0  running  age=3d
+db-99a6e80f2-cfade  1/1  Running  restarts=0  running  age=3d
+queue-d001da78f-f1994  1/1  Running  restarts=0  running  age=3d
+queue-d001da78f-3134f  1/1  Running  restarts=0  running  age=3d
+--- k8s_events {"namespace":"prod"}
+no matching events
+--- k8s_deployments {"namespace":"prod"}
+api  ready=2/2  image=registry.local/api:v141  configmaps=api-config
+checkout  ready=2/2  image=registry.local/checkout:v141  configmaps=checkout-config
+payments  ready=2/2  image=registry.local/payments:v141  configmaps=payments-config
+search  ready=2/2  image=registry.local/search:v141  configmaps=search-config
+db  ready=2/2  image=registry.local/db:v141  configmaps=db-config
+queue  ready=2/2  image=registry.local/queue:v141  configmaps=queue-config
+--- k8s_configmap {"namespace":"prod","name":"checkout-config"}
+POOL_SIZE=20
+FEATURE_NEW_CART=true
+REGION=eu-north-1
+--- jira_search {}
+OPS-101  [Open]  Low  Unassigned  3h ago  checkout: p99 latency above 800 ms (single sample)
+--- grafana_query {"metric":"checkout_error_rate","minutes":30}
+checkout_error_rate (%) last 30 min: min=0.2 max=0.2 latest=0.2  first=0.2
+points: 02:30=0.2 02:35=0.2 02:40=0.2 02:45=0.2 02:50=0.2 02:55=0.2 03:00=0.2
+--- k8s_logs
+02:57 level=info msg="request served" path=/health status=200
+02:58 level=info msg="request served" path=/health status=200
+02:59 level=info msg="request served" path=/health status=200

@@ -1,6 +1,6 @@
 import { DAY, HOUR, MIN } from "../engine.ts";
 import type { Actor, Rng, WorldSpec } from "../types.ts";
-import { BASE_POOL, BASE_REPLICAS, BASE_VERSION, HOMES, KINDS, WEIGHTS, judge, rightFix, type Action, type Cause, type ServiceId } from "./catalog.ts";
+import { BASE_POOL, BASE_REPLICAS, BASE_VERSION, HOMES, KINDS, SERVICES, WEIGHTS, judge, rightFix, type Action, type Cause, type ServiceId } from "./catalog.ts";
 import { initial, reduce, type ItOpsState, type Severity } from "./state.ts";
 
 /**
@@ -37,7 +37,16 @@ export function itopsSpec(policy: Policy): WorldSpec<ItOpsState> {
 	const delayMean = policy === "oracle" ? 25 * MIN : 40 * MIN;
 	const chaos: Actor<ItOpsState> = {
 		id: "chaos",
-		step: ({ now, state, rng }) => {
+		step: ({ now, state, rng, wake }) => {
+			// Godmode: the operator (or a test) opens an incident of a chosen kind on a chosen service, right now.
+			if (wake.kind === "inject") {
+				const kind = wake.data?.kind as (typeof KINDS)[number], service = (wake.data?.service ?? HOMES[kind]?.[0]) as ServiceId;
+				if (!KINDS.includes(kind) || !SERVICES.includes(service)) throw new Error(`cannot inject kind "${kind}" on service "${service}"`);
+				const id = `inc-${state.nextId}`, severity = Number(wake.data?.severity ?? (kind === "noisy_alert" ? 1 : 2)) as Severity;
+				const wakes: any[] = [{ actor: "escalator", in: 4 * HOUR, kind: "escalate", data: { id, n: 0 } }];
+				if (policy !== "none") wakes.push({ actor: "responder", in: 5 * MIN + Math.ceil(rng.exp(1 / delayMean)), kind: "respond", data: { id } });
+				return { events: [{ type: "incident.opened", actor: "operator", payload: { id, kind, service, severity, cause: makeCause(kind, service, state.nextId, rng) as any } }], wakes };
+			}
 			const kind = rng.weighted(KINDS.map((k) => ({ item: k, weight: WEIGHTS[k] })));
 			const service = rng.pick(HOMES[kind]);
 			const severity = (kind === "noisy_alert" ? 1 : rng.weighted<Severity>([{ item: 1, weight: 4 }, { item: 2, weight: 4 }, { item: 3, weight: 2 }])) as Severity;
@@ -55,6 +64,31 @@ export function itopsSpec(policy: Policy): WorldSpec<ItOpsState> {
 			if (!inc || inc.status !== "open") return {};
 			const events = inc.severity < 3 ? [{ type: "incident.worsened", actor: "escalator", payload: { id, severity: inc.severity + 1 } }] : [];
 			return { events, wakes: n < 1 ? [{ actor: "escalator", in: 8 * HOUR, kind: "escalate", data: { id, n: n + 1 } }] : [] };
+		},
+	};
+	/** What an action does to every open incident it touches: one fix.applied per incident, and a resolution when it fits. */
+	const applyTo = (state: ItOpsState, action: Action, by: string): { events: any[]; touched: string[] } => {
+		const target = action.service;
+		const events: any[] = [];
+		const touched: string[] = [];
+		for (const inc of Object.values(state.incidents)) {
+			if (inc.status !== "open") continue;
+			if (!(inc.service === target || inc.cause.rootService === target)) continue;
+			const { outcome, note } = judge(inc.cause, action);
+			touched.push(inc.id);
+			events.push({ type: "fix.applied", actor: by, payload: { id: inc.id, action, outcome, note } });
+			if (outcome === "resolved") events.push({ type: "incident.resolved", actor: by, payload: { id: inc.id, by } });
+		}
+		return { events, touched };
+	};
+	/** The hands of a tool-using agent: performs an action on a service, in the world, with the world's consequences. */
+	const hands: Actor<ItOpsState> = {
+		id: "hands",
+		step: ({ state, wake }) => {
+			const action = wake.data?.action as unknown as Action, by = String(wake.data?.by ?? "tool:unknown");
+			const { events, touched } = applyTo(state, action, by);
+			events.push({ type: "action.performed", actor: by, payload: { action, affected: touched } });
+			return { events };
 		},
 	};
 	const responder: Actor<ItOpsState> = {
@@ -75,7 +109,7 @@ export function itopsSpec(policy: Policy): WorldSpec<ItOpsState> {
 		name: `itops:${policy}`,
 		initial,
 		reduce,
-		actors: [chaos, escalator, responder],
+		actors: [chaos, escalator, responder, hands],
 		start: (rng) => [{ actor: "chaos", at: nextArrival(0, rng), kind: "arrive" }],
 	};
 }
