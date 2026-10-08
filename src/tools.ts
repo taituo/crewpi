@@ -2,10 +2,14 @@ import { Type } from "@earendil-works/pi-ai";
 import { CompactionTask, defineExtension, defineTool, hook, section } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import { agentById } from "./agents.ts";
+import { backupFor } from "./org/routing.ts";
+import { handoffs } from "./work/index.ts";
+import { getOrigin } from "./work/handoffs.ts";
+import { newId } from "./work/events.ts";
 import { agentsInChannel, channelById } from "./channels.ts";
 import { isTicketKey, markCheckoutFixed, openCase } from "./cases.ts";
 import { config } from "./config.ts";
-import { store } from "./db.ts";
+import { db, store } from "./db.ts";
 import { approvalBus, bridge, hub } from "./hub.ts";
 import { assertName, assertReadable, assertWritable, kube } from "./kube.ts";
 import { repo } from "./repo.ts";
@@ -37,7 +41,7 @@ async function gate(
 	req: { title: string; detail: Record<string, unknown> },
 ): Promise<{ approved: boolean; by: string | null; note: string | null }> {
 	const { channelId, agentId } = where(api.conversationId);
-	const { approval, created } = store.openApproval({ channelId, agentId, taskId: String(api.taskId), title: req.title, detail: req.detail });
+	const { approval, created } = store.openApproval({ channelId, agentId, taskId: String(api.taskId), title: req.title, detail: req.detail, requestedBySub: getOrigin(db, channelId, agentId)?.originSub ?? undefined });
 	if (created) {
 		const agent = agentById(agentId)!;
 		const msg = store.addMessage({
@@ -94,33 +98,20 @@ const askAgent = defineTool({
 			const target = agentsInChannel(channelId).find((a) => a.id === args.agent.toLowerCase().replace(/^@/, ""));
 			if (!target) throw new Error(`no agent "${args.agent}" in #${channelId}. Present: ${agentsInChannel(channelId).map((a) => a.id).join(", ")}`);
 			if (target.id === agentId) throw new Error("cannot ask yourself");
-			const depth = bridge.depthOf?.(channelId, agentId) ?? 0;
-			if (depth >= config.limits.maxDelegationDepth) {
-				throw new Error(`delegation depth limit (${config.limits.maxDelegationDepth}) reached. Do not ask other agents again: summarize what you found and what is blocked, and let a human decide.`);
-			}
-			const dupKey = `${channelId}:${target.id}:${args.request.trim().toLowerCase().slice(0, 160)}`;
-			if (recentAsks.has(dupKey) && Date.now() - recentAsks.get(dupKey)! < 600_000) throw new Error(`you (or someone) already asked @${target.id} the same thing recently; wait for the answer instead of repeating it.`);
-			recentAsks.set(dupKey, Date.now());
-			recentDelegations.push({ channelId, at: Date.now() });
-			const recent = recentDelegations.filter((d) => d.channelId === channelId && Date.now() - d.at < 600_000).length;
-			if (recent > config.limits.delegationsPer10Min) throw new Error("delegation limit reached in this channel; ask a human to continue");
-			const me = agentById(agentId)!;
-			await bridge.submitToAgent!({
-				channelId,
-				agentId: target.id,
-				text: args.request,
-				from: { kind: "agent", id: me.id, name: me.name },
-				requestId: `ask:${String(api.taskId)}`,
-				depth: depth + 1,
+			// A handoff: a durable record with an owner, a due time and an acknowledgement. The limits (depth, repeats, rate)
+			// are checked against rows, so they survive a restart. Same request id as before: a replayed tool call is the same handoff.
+			const origin = getOrigin(db, channelId, agentId);
+			const { handoff, created } = handoffs.request({
+				requestId: `ask:${String(api.taskId)}`, channelId, from: agentId, to: target.id, backup: backupFor(db, target.id), text: args.request,
+				correlationId: origin?.correlationId ?? newId("corr"), originSub: origin?.originSub ?? null, requesterDepth: origin?.depth ?? 0, parentHandoffId: origin?.handoffId ?? null,
+				ackWithinMs: config.handoff.ackWithinMs, dueInMs: config.handoff.dueInMs, fromType: "internal_agent",
 			});
-			return text(`Asked @${target.id}. Their answer will appear in #${channelId}.`);
+			return text(`${created ? "Asked" : "Already asked"} @${target.id}. Their answer will appear in #${channelId}. (handoff ${handoff.handoffId}: ${handoff.status})`);
 		} catch (e) {
 			return fail(e);
 		}
 	},
 });
-const recentDelegations: { channelId: string; at: number }[] = [];
-const recentAsks = new Map<string, number>();
 
 const requestApproval = defineTool({
 	name: "request_approval",

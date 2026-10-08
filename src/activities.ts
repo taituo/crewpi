@@ -6,6 +6,8 @@ import * as f from "./fakes.ts";
 import { hub } from "./hub.ts";
 import { askAgentAndWait } from "./runtime.ts";
 import { stopSandbox } from "./sandbox.ts";
+import { handoffs } from "./work/index.ts";
+import { escalate } from "./work/escalation.ts";
 
 /** Activities run in the workspace process: this is where a workflow reaches the agents and the channels. */
 
@@ -45,4 +47,10 @@ export async function closeCase(a: { channelId: string; ticket: string | null; r
 	store.audit("workflow", "case.close", { channel: a.channelId, ticket: a.ticket });
 	setChannelStatus(a.channelId, "archived");
 	void stopSandbox(a.channelId).catch(() => undefined);
+}
+
+/** The only caller of escalation: the handoff watchdog workflow. Idempotent, so Temporal may retry it freely. */
+export async function escalateHandoff(a: { handoffId: string; reason: string }) {
+	const r = escalate(handoffs, a.handoffId, a.reason);
+	return { status: r.handoff.status, reroutedTo: r.rerouted?.to ?? null };
 }

@@ -100,3 +100,26 @@ test("origin of a conversation is stored, so the human who started a chain is kn
 	assert.equal(getOrigin(db, "incidents", "developer")!.depth, 1);
 	assert.equal(getOrigin(db, "incidents", "developer")!.originSub, "kc-alice");
 });
+
+test("run lifecycle moves a handoff: a run that starts before the acknowledgement was recorded still passes through accepted", async () => {
+	const { db, svc } = fresh();
+	const { runStarted, runEnded, runFailed } = await import("../src/work/lifecycle.ts");
+	const a = svc.request(req(1)).handoff;
+	runStarted(svc, "incidents", "developer"); // the run began before the dispatcher could record anything
+	assert.equal(svc.get(a.handoffId)!.status, "in_progress");
+	assert.ok(svc.get(a.handoffId)!.ackEventId, "the acknowledgement still exists as an event");
+	svc.accept(a.handoffId, "runtime"); // the late acknowledgement is ignored
+	runEnded(svc, "incidents", "developer", "message:9");
+	assert.equal(svc.get(a.handoffId)!.status, "completed");
+	assert.deepEqual((db.prepare("SELECT type FROM events ORDER BY sequence").all() as any[]).map((r) => r.type), ["handoff.requested", "handoff.accepted", "handoff.in_progress", "handoff.completed"]);
+	// a run that ends answers everything queued for that recipient; other recipients and channels are untouched
+	const b = svc.request(req(2)).handoff, c = svc.request(req(3, { to: "reviewer", text: "other recipient" })).handoff;
+	svc.accept(b.handoffId, "r"); svc.accept(c.handoffId, "r");
+	runEnded(svc, "incidents", "developer", null);
+	assert.equal(svc.get(b.handoffId)!.status, "completed");
+	assert.equal(svc.get(c.handoffId)!.status, "accepted");
+	// a failed run fails what it had started, never what is still only requested
+	const d = svc.request(req(4, { text: "queued but never reached" })).handoff;
+	runFailed(svc, "incidents", "developer", "model error");
+	assert.equal(svc.get(d.handoffId)!.status, "requested");
+});

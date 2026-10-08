@@ -60,7 +60,6 @@ export const bridge: {
 		/** Hops since the human message / alert that started this chain (0 = started by a human or the watcher). */
 		depth?: number;
 	}) => Promise<unknown>;
-	depthOf?: (channelId: string, agentId: string) => number;
 	/** Attach a chart/table to the agent message currently being written by this conversation. */
 	attachArtifact?: (conversationId: unknown, artifact: Artifact) => void;
 	locate?: (conversationId: unknown) => { channelId: string; agentId: string } | undefined;

@@ -13,7 +13,11 @@ import { AGENTS, agentById, type AgentDef } from "./agents.ts";
 import { channelById } from "./channels.ts";
 import { config } from "./config.ts";
 import { createDemoProvider } from "./demo.ts";
-import { store } from "./db.ts";
+import { db, store } from "./db.ts";
+import { setOrigin } from "./work/handoffs.ts";
+import { newId } from "./work/events.ts";
+import { handoffs } from "./work/index.ts";
+import { runEnded, runFailed, runStarted } from "./work/lifecycle.ts";
 import { bridge, hub, type Artifact } from "./hub.ts";
 import { ALL_EXTENSIONS } from "./tools.ts";
 
@@ -192,6 +196,7 @@ class Mirror {
 		this.status = "working";
 		this.ensureRow();
 		presenceChanged();
+		try { runStarted(handoffs, this.channelId, this.agent.id); } catch (e) { console.error("handoff start", e); }
 	}
 
 	private end() {
@@ -200,9 +205,11 @@ class Mirror {
 		this.live.clear();
 		if (!this.final && !this.activity.length) this.final = "(no answer)";
 		this.flush(true);
+		const answered = this.rowId ? `message:${this.rowId}` : null;
 		store.setCurrentMessage(this.channelId, this.agent.id, null);
 		this.rowId = null;
 		presenceChanged();
+		try { runEnded(handoffs, this.channelId, this.agent.id, answered); } catch (e) { console.error("handoff end", e); }
 	}
 
 	/** Every transcript entry becomes a leaf of this conversation's memory tree (idempotent per entry id). */
@@ -272,6 +279,7 @@ class Mirror {
 				break;
 			}
 			case "task_failed":
+				try { runFailed(handoffs, this.channelId, this.agent.id, `${ev.kind}: ${ev.message}`); } catch (e) { console.error("handoff fail", e); }
 				this.final += `${this.final ? "\n\n" : ""}⚠ Task failed (${ev.kind}): ${ev.message}`;
 				this.flush();
 				break;
@@ -341,8 +349,6 @@ async function ensureConv(channelId: string, agentId: string): Promise<Conversat
 	return conv;
 }
 
-const depthByConv = new Map<string, number>();
-
 export async function submitToAgent(o: {
 	channelId: string;
 	agentId: string;
@@ -354,7 +360,9 @@ export async function submitToAgent(o: {
 }) {
 	const agent = agentById(o.agentId)!;
 	if (resolved.get(o.agentId)?.provider === "openrouter") await assertBudget();
-	depthByConv.set(`${o.channelId}:${o.agentId}`, o.depth ?? 0);
+	// Who started the chain this conversation is now working on is kept in rows (approvals use it for separation of duties).
+	if (o.from.kind === "human") setOrigin(db, { channelId: o.channelId, agentId: o.agentId, originSub: o.from.id, correlationId: newId("corr"), depth: 0, handoffId: null });
+	else if (o.from.id === "workflow") setOrigin(db, { channelId: o.channelId, agentId: o.agentId, originSub: null, correlationId: o.requestId ?? newId("corr"), depth: 0, handoffId: null });
 	if (o.from.kind === "agent" && o.requestId && !store.hasMessageForRequest(o.requestId)) {
 		const m = store.addMessage({
 			channelId: o.channelId,
@@ -486,7 +494,6 @@ export async function startRuntime() {
 	);
 	setupSummarizer();
 	bridge.submitToAgent = submitToAgent;
-	bridge.depthOf = (c, a) => depthByConv.get(`${c}:${a}`) ?? 0;
 	bridge.locate = (id) => convIndex.get(Number(id));
 	bridge.attachArtifact = (id, a) => {
 		const loc = convIndex.get(Number(id));

@@ -19,6 +19,8 @@ import { listSandboxes, startSandboxSweeper, stopSandbox } from "./sandbox.ts";
 import { Registry } from "./org/registry.ts";
 import { seedDefaultOrg } from "./org/seed.ts";
 import { rulePlanner } from "./org/propose.ts";
+import { bus } from "./work/index.ts";
+import { registerWorkConsumers } from "./work/consumers.ts";
 import { DEFAULT_TENANT } from "./migrations.ts";
 import { getClient, listLive, signalDecision, startIncident } from "./temporal-client.ts";
 import { startTemporalWorker } from "./temporal.ts";
@@ -224,6 +226,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		const note = body.note ? String(body.note).slice(0, 300) : null;
 		const target = store.getApproval(Number(mm[1]));
 		if (!target || !canSeeChannel(user.sub, target.channelId)) throw err(404, "approval not found");
+		// Separation of duties: whoever started the chain that asks for this change cannot be the one who approves it.
+		if (config.policy.separationOfDuties && target.requestedBySub && target.requestedBySub === user.sub) throw err(403, "you started the request this approval is for; another approver has to decide (separation of duties)");
 		const a = store.decideApproval(Number(mm[1]), decision, user.name, note, user.sub);
 		if (!a) throw err(409, "already decided or not found");
 		const mid = a.detail.messageId as number | undefined;
@@ -459,6 +463,8 @@ if (config.features.orgModel) seedDefaultOrg(registry);
 await seedChannels();
 await startRuntime();
 startBudgetWatch();
+registerWorkConsumers();
+bus.start();
 startSandboxSweeper();
 void startTemporalWorker();
 loadExtraTickets();
@@ -468,6 +474,7 @@ server.listen(config.port, () => console.log(`${config.brand.name} listening on 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
 	process.on(sig, async () => {
 		server.close();
+		bus.stop();
 		await stopRuntime().catch(() => undefined);
 		process.exit(0);
 	});

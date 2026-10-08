@@ -82,3 +82,32 @@ export async function historyLive(id: string, max = 40) {
 	const h = await c.workflow.getHandle(id).fetchHistory();
 	return (h.events ?? []).slice(0, max).map((e: any, i: number) => `${i + 1}  ${e.eventTime ? new Date(Number(e.eventTime.seconds) * 1000).toISOString().slice(11, 19) : ""}  ${String(e.eventType).replace("EVENT_TYPE_", "")}`);
 }
+
+// ---- handoff watchdog ------------------------------------------------------------------------------------------------
+
+export const handoffWorkflowId = (handoffId: string) => `handoff:${handoffId}`;
+
+/** One workflow per handoff, started with a stable id, so a repeated start is harmless. */
+export async function startHandoffWatch(input: { handoffId: string; ackWithinMs?: number; dueAtMs?: number }): Promise<boolean> {
+	const c = await getClient();
+	if (!c) throw new Error("Temporal is not available");
+	try {
+		await c.workflow.start("handoffWorkflow", { taskQueue: config.temporal.taskQueue, workflowId: handoffWorkflowId(input.handoffId), args: [input] });
+		return true;
+	} catch (e) {
+		if ((e as Error).name === "WorkflowExecutionAlreadyStartedError") return false;
+		throw e;
+	}
+}
+
+export async function signalHandoff(handoffId: string, status: string): Promise<void> {
+	const c = await getClient();
+	if (!c) throw new Error("Temporal is not available");
+	try {
+		await c.workflow.getHandle(handoffWorkflowId(handoffId)).signal("handoffState", { status });
+	} catch (e) {
+		// A finished (or never started) watchdog has nothing left to watch.
+		if (/not found|already completed|completed/i.test((e as Error).message)) return;
+		throw e;
+	}
+}

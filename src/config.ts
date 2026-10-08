@@ -80,6 +80,17 @@ export const config = {
 		orgModel: env.FEATURE_ORG_MODEL === "true",
 	},
 
+	/** How long a recipient has to acknowledge a handoff and to finish it before it is escalated (Temporal is the timer). */
+	handoff: {
+		ackWithinMs: num(env.HANDOFF_ACK_MS, 300_000),
+		dueInMs: num(env.HANDOFF_DUE_MS, 3_600_000),
+	},
+
+	policy: {
+		/** The person whose request started a chain may not approve what that chain asks for. Turn off for a one-person setup. */
+		separationOfDuties: env.SEPARATION_OF_DUTIES !== "false",
+	},
+
 	limits: {
 		/** Agent-initiated delegations allowed per channel per 10 minutes. */
 		delegationsPer10Min: num(env.MAX_DELEGATIONS, 8),
