@@ -18,6 +18,8 @@ export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-}"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-}"
 export OPENROUTER_BUDGET_USD="${OPENROUTER_BUDGET_USD:-5}"
 export AGENT_OPS_MODEL="${AGENT_OPS_MODEL:-}" AGENT_DEVELOPER_MODEL="${AGENT_DEVELOPER_MODEL:-}" AGENT_REVIEWER_MODEL="${AGENT_REVIEWER_MODEL:-}" AGENT_INSIGHT_MODEL="${AGENT_INSIGHT_MODEL:-}" OPTCHAT_MODEL="${OPTCHAT_MODEL:-}"
+# A synthetic world that runs inside the workspace and shows up as the read-only channel #world-<name> (empty = off).
+export WORLD_AUTORUN="${WORLD_AUTORUN:-}" WORLD_TICK_MS="${WORLD_TICK_MS:-4000}" WORLD_TEAM="${WORLD_TEAM:-ops=3,dev=2}" WORLD_FAULTS="${WORLD_FAULTS:-heavy}"
 export COMPACT_KEEP_RECENT_TOKENS="${COMPACT_KEEP_RECENT_TOKENS:-20000}"   # lower it (e.g. 1500) to see compaction in short demos
 export OPTCHAT_VIEW_BYTES="${OPTCHAT_VIEW_BYTES:-6000}"
 export IMAGE="localhost/crew-workspace:$(date +%Y%m%d-%H%M%S)"
@@ -83,7 +85,7 @@ rm -f /tmp/crew-realm.json
 
 echo "==> apply"
 for f in k8s/50-temporal.yaml k8s/40-sandboxes.yaml k8s/10-keycloak.yaml k8s/20-workspace.yaml k8s/30-demo-app.yaml; do
-  envsubst '${BASE_DOMAIN} ${IMAGE} ${BRAND_NAME} ${BRAND_WORKSPACE} ${BRAND_ACCENT} ${LOCAL_LLM_BASE_URL} ${LOCAL_LLM_MODEL} ${COMPACT_KEEP_RECENT_TOKENS} ${OPTCHAT_VIEW_BYTES} ${OPENROUTER_BUDGET_USD} ${AGENT_OPS_MODEL} ${AGENT_DEVELOPER_MODEL} ${AGENT_REVIEWER_MODEL} ${AGENT_INSIGHT_MODEL} ${OPTCHAT_MODEL} ${SANDBOX_IMAGE}' < "$f" | kubectl apply -f - >/dev/null
+  envsubst '${BASE_DOMAIN} ${IMAGE} ${BRAND_NAME} ${BRAND_WORKSPACE} ${BRAND_ACCENT} ${LOCAL_LLM_BASE_URL} ${LOCAL_LLM_MODEL} ${COMPACT_KEEP_RECENT_TOKENS} ${OPTCHAT_VIEW_BYTES} ${OPENROUTER_BUDGET_USD} ${AGENT_OPS_MODEL} ${AGENT_DEVELOPER_MODEL} ${AGENT_REVIEWER_MODEL} ${AGENT_INSIGHT_MODEL} ${OPTCHAT_MODEL} ${SANDBOX_IMAGE} ${WORLD_AUTORUN} ${WORLD_TICK_MS} ${WORLD_TEAM} ${WORLD_FAULTS}' < "$f" | kubectl apply -f - >/dev/null
 done
 
 echo "==> waiting for rollout"

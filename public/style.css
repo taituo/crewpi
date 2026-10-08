@@ -231,3 +231,8 @@ html, body { overflow: hidden; }
 .header .pill.over { color: var(--bad); border-color: var(--bad); }
 
 .chip.sbx { margin-left: 4px; } .chip.sbx .linkbtn { padding: 0 4px; font-size: 11px; }
+
+.world-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.world-tile { border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; padding: 6px 8px; background: var(--panel-2); font-size: 13px; }
+.world-tile.degraded { border-left-color: var(--warn); }
+.world-tile.down { border-left-color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }

@@ -35,6 +35,14 @@ export const config = {
 		clientSecret: env.OIDC_CLIENT_SECRET ?? "",
 	},
 
+	/** A synthetic world that runs inside this server and shows up as a read-only channel (#world-<name>). Empty = off. */
+	world: {
+		autorun: env.WORLD_AUTORUN ?? "",
+		tickMs: num(env.WORLD_TICK_MS, 4000),
+		team: env.WORLD_TEAM ?? "ops=3,dev=2",
+		faults: env.WORLD_FAULTS ?? "heavy",
+	},
+
 	inference: {
 		openaiKey: env.OPENAI_API_KEY ?? "",
 		openrouterKey: env.OPENROUTER_API_KEY ?? "",

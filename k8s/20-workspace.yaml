@@ -61,6 +61,10 @@ spec:
             - { name: AGENT_REVIEWER_MODEL, value: "${AGENT_REVIEWER_MODEL}" }
             - { name: AGENT_INSIGHT_MODEL, value: "${AGENT_INSIGHT_MODEL}" }
             - { name: OPTCHAT_MODEL, value: "${OPTCHAT_MODEL}" }
+            - { name: WORLD_AUTORUN, value: "${WORLD_AUTORUN}" }
+            - { name: WORLD_TICK_MS, value: "${WORLD_TICK_MS}" }
+            - { name: WORLD_TEAM, value: "${WORLD_TEAM}" }
+            - { name: WORLD_FAULTS, value: "${WORLD_FAULTS}" }
             - { name: SANDBOX_IMAGE, value: "${SANDBOX_IMAGE}" }
             - { name: TEMPORAL_ADDRESS, value: "temporal.ai-workflows.svc.cluster.local:7233" }
             - { name: LOCAL_LLM_BASE_URL, value: "${LOCAL_LLM_BASE_URL}" }

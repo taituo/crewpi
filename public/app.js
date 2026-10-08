@@ -263,7 +263,7 @@ function Composer({ channel, agents, canPost, onSend }) {
 			<button class="attach" title="Attach an image (or paste / drop one)" disabled=${!canPost} onClick=${() => picker.current.click()}>📎</button>
 			<input ref=${picker} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange=${(e) => { upload(e.target.files); e.target.value = ""; }} />
 			<textarea ref=${ta} rows="1" disabled=${!canPost} value=${text}
-				placeholder=${canPost ? (channel.kind === "dm" ? `Message ${channel.name} privately` : `Message #${channel.name} — mention an agent with @`) : "Your role is view-only"}
+				placeholder=${canPost ? (channel.kind === "dm" ? `Message ${channel.name} privately` : `Message #${channel.name} — mention an agent with @`) : channel.id.startsWith("world-") ? "A simulation: you can watch, not talk" : "Your role is view-only"}
 				onInput=${(e) => setText(e.target.value)}
 				onPaste=${(e) => { const imgs = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/")); if (imgs.length) { e.preventDefault(); upload(imgs); } }}
 				onKeyDown=${(e) => {
@@ -331,6 +331,40 @@ function WorkPanel({ channel, agentsById, canOperate }) {
 		${(c.facts.stale.length > 0 || c.facts.unverified.length > 0) && html`<div class="ui-sub">${c.facts.stale.length} stale · ${c.facts.unverified.length} unverified</div>`}
 		${c.decisions.all.slice(0, 3).map((d) => html`<div class="note" key=${d.decisionId}><span class=${"chip " + (d.outcome === "approved" ? "st-completed" : "st-failed")}>${d.outcome}</span> ${d.statement}</div>`)}
 		${watch === "off" && html`<div class="ui-sub">No time limits are enforced (Temporal is not connected).</div>`}
+	</div>`;
+}
+
+function WorldPanel({ channel, canOperate }) {
+	const name = channel.id.slice(6);
+	const [v, setV] = useState(null);
+	const [ser, setSer] = useState(null);
+	const [seq, setSeq] = useState(null); // null = follow the present
+	const [god, setGod] = useState(false);
+	const [err, setErr] = useState("");
+	useEffect(() => {
+		const q = (seq === null ? "" : `seq=${seq}`) + (god ? `${seq === null ? "" : "&"}god=1` : "");
+		const load = () => {
+			if (document.hidden) return;
+			api(`/api/worlds/${name}/view${q ? "?" + q : ""}`).then((d) => { setV(d); setErr(""); }).catch((e) => setErr(e.message));
+			api(`/api/worlds/${name}/series`).then(setSer).catch(() => {});
+		};
+		load();
+		const t = setInterval(load, 3000);
+		return () => clearInterval(t);
+	}, [name, seq, god]);
+	if (err) return html`<div class="empty" style="padding:0">${err}</div>`;
+	if (!v) return html`<div class="empty" style="padding:0">Loading…</div>`;
+	const clock = (ms) => { const m = Math.floor(ms / 60000); return "day " + Math.floor(m / 1440) + " " + String(Math.floor((m % 1440) / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+	const chart = (title, vals) => ({ title, type: "line", series: [{ name: title, points: vals.map((y, i) => ({ x: "d" + (ser.days[i]), y })) }] });
+	const perDay = (a) => a.map((x, i) => (i ? x - a[i - 1] : 0));
+	return html`<div class="notes">
+		<div class="ui-sub">${seq === null ? "live" : "history"} · <b>${clock(v.vtime)}</b> · pain ${v.impact} · ${v.handoffs} questions open</div>
+		<input type="range" min="0" max=${v.head} value=${v.seq} style="width:100%" aria-label="Position in the world's history" onInput=${(e) => { const n = Number(e.target.value); setSeq(n >= v.head ? null : n); }} />
+		<div class="world-tiles">${v.services.map((s) => html`<div class=${"world-tile " + s.status} key=${s.id}><b>${s.id}</b><div class="ui-sub">${s.status} · ${s.replicas} pods · ${s.version}</div></div>`)}</div>
+		${v.incidents.length === 0 && html`<div class="empty" style="padding:0">All quiet.</div>`}
+		${v.incidents.map((i) => html`<div class="note" key=${i.id}><span class=${"chip " + (i.severity >= 3 ? "st-failed" : "")}>sev ${i.severity}</span> <b>${i.key}</b> ${i.service} <span class="ui-sub">${i.kind.replace(/_/g, " ")} · ${Math.round((v.vtime - i.openedAt) / 3600000)} h · ${i.attempts} tries</span>${i.cause && html`<div class="ui-sub">cause: ${JSON.stringify(i.cause)}</div>`}</div>`)}
+		${canOperate && html`<label class="ui-sub"><input type="checkbox" checked=${god} onChange=${(e) => setGod(e.target.checked)} /> god eye: show the hidden causes</label>`}
+		${ser && ser.days.length > 2 && html`<${Chart} c=${chart("Customer pain (cumulative)", ser.impact)} /><${Chart} c=${chart("Open incidents", ser.open)} /><${Chart} c=${chart("Resolved per day", perDay(ser.resolved))} />`}
 	</div>`;
 }
 
@@ -548,7 +582,7 @@ function App() {
 			<div class="timeline" ref=${tl} onScroll=${(e) => { const t = e.target; stick.current = t.scrollHeight - t.scrollTop - t.clientHeight < 80; }}>
 				${messages.map((m) => html`<${Message} key=${m.id} m=${m} me=${me} agentIds=${agentIds} onDecide=${decide} onOpen=${setChannelId} onAction=${onAction} wfs=${wfMap} onDecision=${decideWf} />`)}
 			</div>
-			<${Composer} channel=${channel} agents=${channel.kind === "dm" ? [] : chAgents} canPost=${me.perms.post && channel.status === "open"} onSend=${send} />
+			<${Composer} channel=${channel} agents=${channel.kind === "dm" ? [] : chAgents} canPost=${me.perms.post && channel.status === "open" && !channel.id.startsWith("world-")} onSend=${send} />
 		</main>
 		<aside class="ctx">
 			<div class="ctx-pin">
@@ -557,6 +591,7 @@ function App() {
 					<button class="btn" onClick=${() => setChannelId(a.channelId)}>${a.channelId === channel.id ? "Show in chat" : "Open #" + a.channelId}</button></div>`)}
 			</div>
 			<div class="ctx-scroll">
+				${channel.id.startsWith("world-") && html`<h3>World <span style="text-transform:none;letter-spacing:0;font-weight:400">(a simulation; read-only)</span></h3><${WorldPanel} channel=${channel} canOperate=${me.perms.operate} />`}
 				<h3>Agents in #${channel.name}</h3>
 				${chAgents.map((a) => html`<${AgentCard} key=${a.id} a=${a} presence=${presence} channelId=${channel.id} canOperate=${me.perms.operate} onStop=${stop} onFlash=${flash} />`)}
 				<h3>Work <span style="text-transform:none;letter-spacing:0;font-weight:400">(who waits for whom)</span></h3>

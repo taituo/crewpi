@@ -55,7 +55,14 @@ test("deny by absence: no live write tool exists in the synthetic set, and the w
 	const walk = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") && files.push(p); } };
 	walk(root);
 	assert.ok(files.length >= 8);
-	for (const file of files) {
+	// The bridge and the live runner are the one sanctioned crossing to the live side (they only write chat messages into a read-only
+	// channel). Nothing else under src/world may touch the crossing, and the crossing itself may reach only the message store and the hub.
+	const isCrossing = (f: string) => ["bridge.ts", "live.ts"].includes(f.split("/").pop()!);
+	for (const file of files.filter(isCrossing)) {
+		for (const m of readFileSync(file, "utf8").matchAll(/(?:import|from)\s*(?:\(|)\s*["'](\.\.[^"']+)["']/g)) assert.ok(["../db.ts", "../hub.ts"].includes(m[1]), `${relative(".", file)} imports ${m[1]}: the crossing may reach only db and hub`);
+	}
+	for (const file of files.filter((f) => !isCrossing(f))) assert.doesNotMatch(readFileSync(file, "utf8"), /(?:from|import)\s*\(?\s*["']\.\/(bridge|live)\.ts["']/, `${relative(".", file)} imports the live crossing`);
+	for (const file of files.filter((f) => !isCrossing(f))) {
 		for (const m of readFileSync(file, "utf8").matchAll(/(?:import|from)\s*(?:\(|)\s*["'](\.[^"']+)["']/g)) {
 			const target = resolve(dirname(file), m[1]).replace(/\.ts$/, "");
 			const rel = relative(resolve("src"), target);

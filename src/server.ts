@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENTS, agentById } from "./agents.ts";
@@ -7,6 +8,9 @@ import { agentsInChannel, canSeeChannel, channelById, createDm, listChannels, pa
 import { callback, login, logout, permsOf, userFrom, type User } from "./auth.ts";
 import { assertSafeConfig, config } from "./config.ts";
 import { store } from "./db.ts";
+import { isWorldChannel } from "./world/bridge.ts";
+import { startLiveWorld } from "./world/live.ts";
+import { Observer } from "./world/observe.ts";
 import { approvalBus, hub } from "./hub.ts";
 import { initRepo } from "./repo.ts";
 import { listIntegrations, setEnabled } from "./integrations.ts";
@@ -117,6 +121,26 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 
 	if (m === "GET" && path === "/api/me") return json(res, 200, publicState(user));
 
+	// ---- synthetic worlds (read-only): list, dashboard data, charts ----
+	if (m === "GET" && path === "/api/worlds") {
+		const dir = join(config.dataDir, "worlds");
+		const worlds = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".sqlite")).map((f) => f.replace(/\.sqlite$/, "")).flatMap((name) => {
+			try { const o = new Observer(join(dir, `${name}.sqlite`)); const i = o.info(); o.close(); return [{ name, spec: i.spec, day: i.day, events: i.events, hash: i.hash, roster: i.roster }]; } catch { return []; }
+		}) : [];
+		return json(res, 200, { worlds });
+	}
+	let wm: RegExpExecArray | null;
+	if (m === "GET" && (wm = /^\/api\/worlds\/([\w-]+)\/(view|series)$/.exec(path))) {
+		const file = join(config.dataDir, "worlds", `${wm[1]}.sqlite`);
+		if (!existsSync(file)) throw err(404, "no such world");
+		const god = url.searchParams.get("god") === "1";
+		if (god && !perms.operate) throw err(403, "the hidden causes are for operators");
+		const seqParam = url.searchParams.get("seq");
+		if (seqParam !== null && !/^\d+$/.test(seqParam)) throw err(400, "seq must be a whole number");
+		const o = new Observer(file);
+		try { return json(res, 200, wm[2] === "view" ? o.view(seqParam === null ? undefined : Number(seqParam), { god }) : o.series()); } finally { o.close(); }
+	}
+
 	if (m === "GET" && path === "/api/events") {
 		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
 		res.write(`event: hello\ndata: {}\n\n`);
@@ -158,6 +182,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		const chan = canSeeChannel(user.sub, channelId) ? channelById(channelId) : undefined;
 		if (!chan) throw err(404, "no such channel");
 		if (chan.status === "archived") throw err(409, "this case channel is archived; reopen it to continue");
+		if (isWorldChannel(chan.id)) throw err(403, "this channel is a read-only window into a synthetic world");
 		if (!perms.post) throw err(403, "your role is view-only");
 		const body = await readBody(req);
 		const attIds: string[] = Array.isArray(body.attachments) ? body.attachments.map(String).slice(0, 4) : [];
@@ -515,6 +540,7 @@ void startTemporalWorker();
 loadExtraTickets();
 startWatcher();
 server.listen(config.port, () => console.log(`${config.brand.name} listening on :${config.port} (auth=${config.auth.mode})`));
+if (config.world.autorun) startLiveWorld({ dir: join(config.dataDir, "worlds"), name: config.world.autorun, tickMs: config.world.tickMs, team: config.world.team, faults: config.world.faults });
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
 	process.on(sig, async () => {
