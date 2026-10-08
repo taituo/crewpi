@@ -360,6 +360,7 @@ export async function submitToAgent(o: {
 	from: { kind: "human" | "agent"; id: string; name: string };
 	requestId?: string;
 	depth?: number;
+	card?: boolean;
 	images?: { data: string; mimeType: string; name?: string }[];
 }) {
 	const agent = agentById(o.agentId)!;
@@ -367,7 +368,7 @@ export async function submitToAgent(o: {
 	// Who started the chain this conversation is now working on is kept in rows (approvals use it for separation of duties).
 	if (o.from.kind === "human") setOrigin(db, { channelId: o.channelId, agentId: o.agentId, originSub: o.from.id, correlationId: newId("corr"), depth: 0, handoffId: null });
 	else if (o.from.id === "workflow") setOrigin(db, { channelId: o.channelId, agentId: o.agentId, originSub: null, correlationId: o.requestId ?? newId("corr"), depth: 0, handoffId: null });
-	if (o.from.kind === "agent" && o.requestId && !store.hasMessageForRequest(o.requestId)) {
+	if (o.from.kind === "agent" && o.requestId && o.card !== false && !store.hasMessageForRequest(o.requestId)) {
 		const m = store.addMessage({
 			channelId: o.channelId,
 			authorKind: "system",
