@@ -57,3 +57,6 @@ Participants are `human:`, `agent:`, `external:`, `assistant:` or `service:` plu
 - Channels, agents-as-runtime and workflows are not configurable from files yet, because the runtime does not read the registry yet (see `docs/org-registry.md`). Apply only changes the registry.
 - No `crew` verbs for approvals, handoffs or workflows yet; they arrive with the prompts that create those objects (rule 1 in `docs/extras.md`).
 - `replay --follow` (live tail) is not built.
+
+## World teams and the god eye
+`crew world new <name> --spec itops:none --team ops=3,dev=2 [--faults none|light|heavy] [--seed s]` creates a world with a team of agents (roster remembered in `<name>.team.json` next to the world file). `crew world run` then drives the agents (rule-based Tier 1 brains today) in slices, resumable. `crew world watch <name> [--port 8810] [--host 127.0.0.1]` serves the read-only god eye, see `docs/world/god-eye.md`.

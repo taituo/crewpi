@@ -25,6 +25,8 @@ const HELP = `crew - command line for Crew
   crew orgs                                         list organizations
   crew world new <name> [--spec ticker] [--seed <text>]     a synthetic world (one SQLite file under DATA_DIR/worlds)
   crew world run <name> (--days N | --until DAY) [--slice D] [--max-steps N]
+  crew world new <name> --spec itops:none --team ops=3,dev=2 [--faults none|light|heavy]   a world with a team of agents
+  crew world watch <name> [--port 8810]   the god eye: a read-only web view of the world (conversation, services, charts, time slider)
   crew world status <name>      |      crew world list
   crew handoffs [--channel <name>] [--status requested,accepted,...] [--json]
   crew case <channel> [--json]                      the shared case picture: who waits for whom, facts, conflicts, decisions
@@ -41,7 +43,7 @@ const { values: v, positionals: pos } = parseArgs({
 		"create-realm": { type: "string" }, entity: { type: "string" },
 		file: { type: "string", short: "f" }, "dry-run": { type: "boolean" }, "no-adopt": { type: "boolean" },
 		format: { type: "string" }, status: { type: "string" }, correlation: { type: "string" },
-		seed: { type: "string" }, spec: { type: "string" }, days: { type: "string" }, until: { type: "string" }, slice: { type: "string" }, "max-steps": { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
+		seed: { type: "string" }, spec: { type: "string" }, team: { type: "string" }, faults: { type: "string" }, port: { type: "string" }, host: { type: "string" }, days: { type: "string" }, until: { type: "string" }, slice: { type: "string" }, "max-steps": { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
 	},
 });
 
@@ -146,7 +148,7 @@ async function main() {
 			return console.log(`realm ${slug(name)} ready${v.entity ? `, entity ${slug(v.entity)}` : ""}`);
 		}
 		case "world": {
-			const { existsSync, mkdirSync, readdirSync } = await import("node:fs");
+			const { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } = await import("node:fs");
 			const { join } = await import("node:path");
 			const { config } = await import("./config.ts");
 			const { World, DAY } = await import("./world/engine.ts");
@@ -167,13 +169,33 @@ async function main() {
 				if (!SPECS[spec]) die(`unknown spec "${spec}" (available: ${Object.keys(SPECS).join(", ")})`);
 				if (existsSync(path)) die(`world "${name}" already exists`);
 				mkdirSync(dir, { recursive: true });
-				const w = World.open(path, { spec: SPECS[spec], seed: v.seed ?? name, rng: seededRng, name });
+				let team: import("./world/team.ts").TeamFile | undefined;
+				if (v.team) {
+					const tm = await import("./world/team.ts");
+					if (!spec.startsWith("itops")) die("a team needs the IT-ops world (--spec itops:none)");
+					try { team = tm.parseTeam(v.team, v.faults ?? "none"); } catch (e) { die((e as Error).message); }
+					writeFileSync(join(dir, `${name}.team.json`), JSON.stringify(team));
+				}
+				const tm = team ? await import("./world/team.ts") : undefined;
+				const w = World.open(path, { spec: team ? tm!.teamSpec(SPECS[spec], team) : SPECS[spec], seed: v.seed ?? name, rng: seededRng, name });
 				const st = w.status(); w.close();
-				return console.log(`world ${name} created (spec ${spec}, seed ${st.seed}, ${st.pending} wake-ups scheduled)`);
+				return console.log(`world ${name} created (spec ${st.spec}, seed ${st.seed}, ${st.pending} wake-ups scheduled${team ? `; ${tm!.teamIds(team).length} agents: ${tm!.teamIds(team).join(", ")}; tools: ${team.faults}` : ""})`);
 			}
 			const known = existsSync(path) ? World.describe(path) : undefined;
 			if (!known) die(`no world "${name}" (create it with: crew world new ${name})`);
-			const open = () => World.open(path, { spec: SPECS[known!.spec] ?? die(`this build does not know the spec "${known!.spec}"`), seed: known!.seed, rng: seededRng, name });
+			if (sub === "watch") {
+				const { startWatch } = await import("./world/watch-server.ts");
+				const port = v.port === undefined ? 8810 : Number(v.port);
+				if (!Number.isInteger(port) || port < 0 || port > 65535) die("--port must be a port number");
+				const srv = await startWatch({ path, port, host: v.host ?? "127.0.0.1" }).catch((e) => die((e as Error).message));
+				console.log(`god eye on ${name}: ${srv.url}   (read-only; Ctrl-C to stop)`);
+				return new Promise<void>(() => {});
+			}
+			const teamPath = join(dir, `${name}.team.json`);
+			const teamFile: import("./world/team.ts").TeamFile | undefined = existsSync(teamPath) ? JSON.parse(readFileSync(teamPath, "utf8")) : undefined;
+			const teamMod = teamFile ? await import("./world/team.ts") : undefined;
+			const baseSpec = SPECS[known!.spec.split("+")[0]] ?? die(`this build does not know the spec "${known!.spec}"`);
+			const open = () => World.open(path, { spec: teamFile ? teamMod!.teamSpec(baseSpec, teamFile) : baseSpec, seed: known!.seed, rng: seededRng, name });
 			if (sub === "status") {
 				const w = open(); const st = w.status(); w.close();
 				for (const [k, val] of Object.entries(st)) console.log(`${k}: ${val}`);
@@ -194,9 +216,17 @@ async function main() {
 					const day = Math.floor(w.status().vtime / DAY);
 					const step = v.until !== undefined ? Math.min(slice, target - day) : Math.min(slice, remaining);
 					if (!(step > 0)) break;
-					const rep = v.until !== undefined ? w.run({ untilDay: day + step, maxSteps }) : w.run({ days: step, maxSteps });
+					let rep: import("./world/types.ts").RunReport, extra = "";
+					if (teamFile) {
+						// a team world: the agents' shifts are done outside the engine loop (they may be slow, and they may be models)
+						const { runAgents } = await import("./world/agents.ts");
+						const t0 = Date.now(), ev0 = w.status().events;
+						const tr = await runAgents(w, { agents: teamMod!.teamAgents(teamFile), untilDay: day + step, faults: teamMod!.FAULT_PRESETS[teamFile.faults], maxShifts: maxSteps });
+						rep = { fromDay: day, toDay: Math.floor(w.status().vtime / DAY), steps: tr.shifts, events: w.status().events - ev0, wallMs: Date.now() - t0, stopped: maxSteps !== undefined && tr.shifts >= maxSteps ? "max-steps" : "done" };
+						extra = `, ${tr.shifts} shifts, ${tr.calls} tool calls${tr.errors ? `, ${tr.errors} failed` : ""}${tr.degraded ? `, ${tr.degraded} degraded` : ""}`;
+					} else rep = v.until !== undefined ? w.run({ untilDay: day + step, maxSteps }) : w.run({ days: step, maxSteps });
 					announceSlice(bus, w, rep);
-					console.log(`slice ${++i}: day ${rep.fromDay} -> ${rep.toDay}, ${rep.steps} steps, ${rep.events} events, ${rep.wallMs} ms, hash ${w.hash().slice(0, 12)}${rep.stopped !== "done" ? `  (stopped: ${rep.stopped})` : ""}`);
+					console.log(`slice ${++i}: day ${rep.fromDay} -> ${rep.toDay}, ${rep.steps} steps, ${rep.events} events${extra}, ${rep.wallMs} ms, hash ${w.hash().slice(0, 12)}${rep.stopped !== "done" ? `  (stopped: ${rep.stopped})` : ""}`);
 					if (rep.stopped !== "done") break;
 					remaining -= step;
 				}

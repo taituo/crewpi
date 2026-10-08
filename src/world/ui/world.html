@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crew World · God eye</title>
+<style>
+:root {
+  --bg: #0e1116; --panel: #151a22; --panel2: #1b2230; --line: #263043; --text: #dbe3f0; --dim: #8a97ab;
+  --ok: #3fb97f; --warn: #e5b53b; --bad: #e5594f; --blue: #5aa2ff; --violet: #a78bfa; --teal: #3cc4c4;
+}
+:root[data-theme="light"] {
+  --bg: #f4f6fa; --panel: #ffffff; --panel2: #eef2f8; --line: #d6deea; --text: #1c2433; --dim: #64718a;
+  --ok: #1e9e63; --warn: #b78608; --bad: #cf3b31; --blue: #2b7de9; --violet: #7a5ae0; --teal: #118a8a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+header .meta { color: var(--dim); font-size: 12px; }
+header .clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+.pill { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--dim); background: var(--panel2); cursor: pointer; user-select: none; }
+.pill.on { color: var(--text); border-color: var(--blue); }
+.pill.live.on { border-color: var(--ok); color: var(--ok); }
+.scrub { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.scrub input[type=range] { flex: 1; accent-color: var(--blue); }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) minmax(260px, 360px); gap: 12px; padding: 12px 16px; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; overflow: auto; } }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+section > h2 { margin: 0; padding: 8px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.body { padding: 10px 12px; overflow: auto; min-height: 0; flex: 1; }
+.col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel2); position: relative; }
+.tile .name { font-weight: 600; }
+.tile .sub { color: var(--dim); font-size: 12px; }
+.tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 8px 0 0 8px; background: var(--ok); }
+.tile.degraded::before { background: var(--warn); }
+.tile.down::before { background: var(--bad); }
+.tile.down { box-shadow: 0 0 0 1px var(--bad) inset; }
+.inc { border-top: 1px solid var(--line); padding: 6px 0; }
+.inc:first-child { border-top: 0; }
+.sev { display: inline-block; min-width: 18px; text-align: center; border-radius: 4px; color: #fff; font-size: 11px; padding: 0 4px; }
+.sev1 { background: var(--blue); } .sev2 { background: var(--warn); } .sev3 { background: var(--bad); }
+.dim { color: var(--dim); }
+.tabs { display: flex; gap: 6px; }
+.chat { display: flex; flex-direction: column; gap: 6px; }
+.msg { display: flex; gap: 8px; align-items: flex-start; }
+.avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.bubble { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.bubble .who { font-size: 12px; font-weight: 600; }
+.bubble .when { color: var(--dim); font-size: 11px; margin-left: 6px; font-weight: 400; }
+.msg.request .bubble { border-left: 3px solid var(--blue); }
+.msg.reply .bubble { border-left: 3px solid var(--ok); }
+.msg.fix .bubble { border-left: 3px solid var(--violet); }
+.msg.escalation .bubble { border-left: 3px solid var(--bad); }
+.msg.alert .bubble, .msg.resolved .bubble { background: transparent; border-style: dashed; color: var(--dim); }
+.msg.resolved .bubble { color: var(--ok); }
+.msg.alert .bubble { color: var(--warn); }
+.ev { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); padding: 2px 0; }
+.ev b { color: var(--teal); font-weight: 600; }
+.roster { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; }
+.chart { margin-bottom: 10px; }
+.chart h3 { margin: 0 0 2px; font-size: 12px; color: var(--dim); font-weight: 500; display: flex; justify-content: space-between; }
+svg { width: 100%; height: 64px; display: block; background: var(--panel2); border-radius: 6px; }
+.empty { color: var(--dim); padding: 12px; text-align: center; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Crew World · God eye</h1>
+  <span class="meta" id="world"></span>
+  <span class="clock" id="clock"></span>
+  <span class="meta" id="hash"></span>
+  <span style="flex:1"></span>
+  <span class="pill live on" id="live" title="Follow the newest events">● live</span>
+  <span class="pill" id="god" title="Show the hidden causes of incidents (the secret the agents do not see)">god eye: off</span>
+  <span class="pill on" id="shifts" title="Hide the routine shift events in the Events tab">shifts hidden</span>
+  <span class="pill" id="theme" title="Switch light and dark">theme</span>
+</header>
+<div class="scrub">
+  <span class="dim" id="seqlabel"></span>
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Position in the world's history">
+  <span class="dim" id="headlabel"></span>
+</div>
+<main>
+  <div class="col">
+    <section><h2>Services <span id="impact" class="dim"></span></h2><div class="body"><div class="tiles" id="tiles"></div></div></section>
+    <section style="flex:1"><h2>Open incidents <span id="incount" class="dim"></span></h2><div class="body" id="incidents"></div></section>
+  </div>
+  <section>
+    <h2><span class="tabs"><span class="pill on" id="tab-chat">Conversation</span><span class="pill" id="tab-events">Events</span></span><span class="dim" id="feedinfo"></span></h2>
+    <div class="body" id="feed"></div>
+  </section>
+  <div class="col">
+    <section><h2>Team</h2><div class="body"><div class="roster" id="roster"></div></div></section>
+    <section style="flex:1"><h2>Trends</h2><div class="body" id="charts"></div></section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const DAY = 86400000;
+const state = { info: null, live: true, god: false, tab: "chat", seq: 0, chat: [], events: [], chatCursor: 0, series: null, day: 0, hideShifts: true };
+const COLORS = ["#5aa2ff", "#a78bfa", "#3cc4c4", "#e5b53b", "#e5594f", "#3fb97f", "#f08bc0", "#f0a35a"];
+const colorOf = (name) => { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+const fmtTime = (ms) => { const m = Math.floor(ms / 60000); return "day " + Math.floor(m / 1440) + " " + String(Math.floor((m % 1440) / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const api = async (path) => { const r = await fetch(path, { cache: "no-store" }); if (!r.ok) throw new Error(path + " " + r.status); return r.json(); };
+
+function renderView(v) {
+  if (state.day !== v.day) { state.day = v.day; renderCharts(); }
+  $("clock").textContent = fmtTime(v.vtime);
+  $("seqlabel").textContent = "event " + v.seq;
+  $("impact").textContent = "pain " + v.impact + " sev·min";
+  const tiles = $("tiles"); tiles.replaceChildren();
+  for (const s of v.services) {
+    const t = el("div", "tile " + s.status);
+    t.append(el("div", "name", s.id), el("div", "sub", s.status + " · " + s.replicas + " pods · " + s.version));
+    if (!s.certValid) t.append(el("div", "sub", "certificate expired"));
+    tiles.append(t);
+  }
+  const box = $("incidents"); box.replaceChildren();
+  $("incount").textContent = v.incidents.length + " open";
+  if (!v.incidents.length) box.append(el("div", "empty", "all quiet"));
+  for (const i of v.incidents) {
+    const d = el("div", "inc");
+    const head = el("div"); head.append(el("span", "sev sev" + i.severity, String(i.severity)), document.createTextNode(" " + i.key + " · " + i.service + " "), el("span", "dim", i.kind.replace(/_/g, " ")));
+    d.append(head, el("div", "dim", "open " + Math.round((v.vtime - i.openedAt) / 3600000) + " h · " + i.attempts + " fix attempts"));
+    if (i.cause) d.append(el("div", "dim", "cause: " + JSON.stringify(i.cause)));
+    box.append(d);
+  }
+}
+
+function renderRoster() {
+  const r = $("roster"); r.replaceChildren();
+  const roster = (state.info && state.info.roster) || [];
+  if (!roster.length) r.append(el("div", "dim", "no agents in this world"));
+  for (const a of roster) {
+    const av = el("div", "avatar", a.id.slice(0, 2).toUpperCase()); av.style.background = colorOf(a.id);
+    r.append(av, el("div", null, a.id + " · tier " + a.tier), el("div", "dim", a.shifts + " shifts"));
+  }
+}
+
+function bubble(m) {
+  const row = el("div", "msg " + m.kind);
+  const av = el("div", "avatar", String(m.from).slice(0, 2).toUpperCase()); av.style.background = colorOf(m.from);
+  const b = el("div", "bubble"), who = el("div", "who", m.from + (m.to ? " → " + m.to : ""));
+  who.append(el("span", "when", fmtTime(m.vtime)));
+  b.append(who, el("div", null, m.text));
+  row.append(av, b);
+  return row;
+}
+
+function renderFeed() {
+  const feed = $("feed"), atEnd = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  feed.replaceChildren();
+  if (state.tab === "chat") {
+    const msgs = state.chat.filter((m) => m.seq <= state.seq);
+    $("feedinfo").textContent = msgs.length + " messages";
+    if (!msgs.length) feed.append(el("div", "empty", "nothing said yet"));
+    const wrap = el("div", "chat");
+    for (const m of msgs.slice(-400)) wrap.append(bubble(m));
+    feed.append(wrap);
+  } else {
+    // the events up to the chosen moment: a window of the last 300 before it, fetched when needed
+    const evs = state.events.filter((e) => e.seq <= state.seq && !(state.hideShifts && e.type === "agent.shift")).slice(-300);
+    $("feedinfo").textContent = "events " + (evs.length ? evs[0].seq + "–" + evs[evs.length - 1].seq : "none");
+    for (const e of evs) {
+      const d = el("div", "ev"); const b = el("b", null, e.type);
+      d.append(document.createTextNode("#" + e.seq + " " + fmtTime(e.vtime) + " "), b, document.createTextNode(" " + e.actor + " " + JSON.stringify(e.payload).slice(0, 300)));
+      feed.append(d);
+    }
+  }
+  if (state.live || atEnd) feed.scrollTop = feed.scrollHeight;
+}
+let evTimer = 0;
+async function loadEventWindow() {
+  if (state.tab !== "events") return;
+  const e = await api("/api/events?since=" + Math.max(0, state.seq - 1200) + "&limit=1200");
+  state.events = e.events; renderFeed();
+}
+function wantEvents() { clearTimeout(evTimer); evTimer = setTimeout(() => loadEventWindow().catch(() => {}), 150); }
+
+function line(values, color, mark) {
+  const w = 300, h = 64, p = 4, n = values.length;
+  const max = Math.max(1, ...values);
+  const pts = values.map((v, i) => [p + (n <= 1 ? 0 : (i / (n - 1)) * (w - 2 * p)), h - p - (v / max) * (h - 2 * p)]);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 " + w + " " + h); svg.setAttribute("preserveAspectRatio", "none");
+  const path = document.createElementNS(svg.namespaceURI, "polyline");
+  path.setAttribute("points", pts.map((q) => q.join(",")).join(" ")); path.setAttribute("fill", "none"); path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2");
+  svg.append(path);
+  if (mark !== undefined && n > 1) { // where the slider is, in days
+    const x = p + Math.min(1, Math.max(0, mark / (n - 1))) * (w - 2 * p), m = document.createElementNS(svg.namespaceURI, "line");
+    m.setAttribute("x1", x); m.setAttribute("x2", x); m.setAttribute("y1", 0); m.setAttribute("y2", h); m.setAttribute("stroke", "#8a97ab"); m.setAttribute("stroke-dasharray", "3 3");
+    svg.append(m);
+  }
+  return svg;
+}
+function renderCharts() {
+  const s = state.series, box = $("charts"); box.replaceChildren();
+  if (!s || s.days.length < 2) { box.append(el("div", "empty", "the charts start after the first day")); return; }
+  const last = (a) => a[a.length - 1];
+  const perDay = (a) => a.map((v, i) => (i ? v - a[i - 1] : 0));
+  const defs = [["Customer pain (cumulative)", s.impact, "#e5594f"], ["Open incidents", s.open, "#e5b53b"], ["New incidents per day", perDay(s.opened), "#5aa2ff"], ["Resolved per day", perDay(s.resolved), "#3fb97f"], ["Handoffs (cumulative)", s.handoffs, "#a78bfa"]];
+  for (const [title, vals, color] of defs) {
+    const c = el("div", "chart"), h = el("h3"); h.append(el("span", null, title), el("span", null, String(last(vals))));
+    c.append(h, line(vals, color, state.day)); box.append(c);
+  }
+}
+
+async function loadMore() {
+  const c = await api("/api/chat?since=" + state.chatCursor + "&limit=1000");
+  if (c.messages.length) { state.chat.push(...c.messages); state.chatCursor = c.messages[c.messages.length - 1].seq; }
+  return c.messages.length === 1000;
+}
+
+async function refresh() {
+  try {
+    const info = await api("/api/info"); state.info = info;
+    $("world").textContent = info.name + " · " + info.spec + " · seed " + info.seed;
+    $("hash").textContent = "hash " + info.hash.slice(0, 10);
+    const slider = $("slider"); slider.max = String(info.events); $("headlabel").textContent = "head " + info.events;
+    if (state.live) { state.seq = info.events; slider.value = String(info.events); }
+    while (await loadMore()) { /* page through a long history */ }
+    renderRoster(); renderFeed(); wantEvents();
+    renderView(await api("/api/view?seq=" + state.seq + (state.god ? "&god=1" : "")));
+  } catch (e) { $("clock").textContent = "no connection (" + e.message + ")"; }
+}
+async function refreshSeries() { try { state.series = await api("/api/series"); renderCharts(); } catch (e) { /* the next tick tries again */ } }
+
+$("slider").addEventListener("input", async (ev) => {
+  state.live = false; $("live").classList.remove("on"); $("live").textContent = "○ paused";
+  state.seq = Number(ev.target.value);
+  renderFeed(); wantEvents(); renderView(await api("/api/view?seq=" + state.seq + (state.god ? "&god=1" : "")));
+});
+$("live").addEventListener("click", () => { state.live = !state.live; $("live").classList.toggle("on", state.live); $("live").textContent = state.live ? "● live" : "○ paused"; refresh(); });
+$("shifts").addEventListener("click", () => { state.hideShifts = !state.hideShifts; $("shifts").classList.toggle("on", state.hideShifts); $("shifts").textContent = state.hideShifts ? "shifts hidden" : "shifts shown"; renderFeed(); });
+$("god").addEventListener("click", () => { state.god = !state.god; $("god").classList.toggle("on", state.god); $("god").textContent = "god eye: " + (state.god ? "on" : "off"); refresh(); });
+$("theme").addEventListener("click", () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("world-theme", r.dataset.theme); } catch (e) { /* private window */ } });
+for (const t of ["chat", "events"]) $("tab-" + t).addEventListener("click", () => {
+  state.tab = t; $("tab-chat").classList.toggle("on", t === "chat"); $("tab-events").classList.toggle("on", t === "events");
+  refresh();
+});
+try { const t = localStorage.getItem("world-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* private window */ }
+refresh(); refreshSeries();
+setInterval(() => { if (state.live) refresh(); }, 2000);
+setInterval(refreshSeries, 10000);
+</script>
+</body>
+</html>
