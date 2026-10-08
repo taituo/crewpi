@@ -70,7 +70,7 @@ Lähde: `docs/extras.md`, `docs/world/` haarassa `feat/world-bridge`.
 ---
 # Lisäys: alkuperäiskeskustelut (2026-10-06, ChatGPT-viennit)
 
-Lähteet: `Crewpi arviointi`, `Pi Durable swarm-ratkaisu`, `Pi Durable testipenkki`, `Pi Durablen selitys` (vientitiedostot, kopioitu repon ulkopuolelle; eivät ole repossa). Nämä ovat ideoita ja ChatGPT:n ehdotuksia, eivät toteutettuja tai varmennettuja. Käyttäjän omat sanat on merkitty "käyttäjä:". Niissä Entropi tarkoittaa alkuperäistä nimiehdotusta ("entropia"), ei välttämättä `taituo/entropi`-repoa.
+Lähteet: `Crewpi arviointi`, `Pi Durable swarm-ratkaisu`, `Pi Durable testipenkki`, `Pi Durablen selitys` (vientitiedostot, kopioitu repon ulkopuolelle; eivät ole repossa). Nämä ovat ideoita ja ChatGPT:n ehdotuksia, eivät toteutettuja tai varmennettuja. Käyttäjän omat sanat on merkitty "käyttäjä:". Niissä Entropi on käyttäjän oma, CrewPistä karsittu "ultimate core" (`taituo/entropi`, nimi tulee sanasta entropia); CrewPi on alkuperäinen vibekoodattu versio.
 
 ## H. Swarm Gym (päättelystrategiat)
 - **Idea:** ei "monta agenttia" vaan informaation dynamiikka: tuota ensin entropiaa (monta hypoteesia), poista se hallitusti (valinta, todisteet, kritiikki), tiivistä lopuksi yhteen vastaukseen. Käyttäjä: ei valtavaa pullistelua, vaan hyvä päättelyketju.
@@ -125,3 +125,33 @@ Lähteet: `Crewpi arviointi`, `Pi Durable swarm-ratkaisu`, `Pi Durable testipenk
 - **GitOps-polku:** agentti muuttaa lähde-repoa, CI rakentaa imagen, GitOps-repon image tag muuttuu, Argo CD synkkaa: agentilla ei tarvita Kubernetes-kirjoitusoikeutta. Valvonta: Prometheus + Alertmanager-webhook → incident-run; Loki; OpenTelemetry. Työkalut MCP-palveluiksi myöhemmin.
 - **Temporal on selkäranka, ei agentti:** LLM-kutsut eivät kuulu workflow-koodiin vaan aktiviteetteihin; workflow odottaa ihmistä signaalilla; ihminen voi tulla mukaan milloin vain.
 - **UI-leikki:** Hyprland-tyylinen tiled-käyttöliittymä (Tauri), "todellinen agent OS", ydin tiukaksi ("miten tehdään tiukka core tälle crewpille").
+
+---
+# Lisäys 2: keskustelu, jossa goal syntyi (`Tervehdys keskustelu`, ChatGPT-vienti 2026-10-08)
+
+Lähde: ChatGPT-keskustelu (70 viestiä), jossa 11 alkuperäistä promptia koottiin goaliksi; promptit 12–15 lisättiin myöhemmin samassa keskustelussa. Luettu osittain (käyttäjän viestit kokonaan, vastauksista termit, peli- ja robotiikkaosiot). ChatGPT:n ehdotuksia, ei varmennettua.
+
+## N. Mistä goal tuli ja miten se rajattiin
+- **Tuotekuva:** "skaalausongelman ratkaisu": tuhannet transaktiot, joita ennen valvottiin käsin, siirtyvät agenteille ja ihminen siirtyy kerroksen ylöspäin. Ei korvaa isoja organisaatiorakenteita; organisaatio on valinnainen ohjaava kerros ("ei varsinainen organisaatio"). Organisaatiomalli on ihmisen luonnollinen tapa ymmärtää rytmi, aika ja päätöksenteko; yksi agentti voisi toteuttaa saman, mutta ihmisen olisi vaikea ymmärtää sitä.
+- **Rooli:** CEO/CTO voi osallistua eri intensiteeteillä, ohjata mutta ei ottaa vastuuta ellei "lyö nyrkkiä pöytään" (override). Valmistelijat tekevät kokoukset, haastattelija kysyy poissaoloaikana syntyneet kysymykset.
+- **Käyttäjän kuvaus:** CrewPi on hänen oma tekemänsä; Entropi on siitä karsittu ultimate core. "With batteries" -ajattelu: kehittäjille jää vähemmän ajateltavaa. Hän pitää tätä eri asiana kuin Grok-botit tai muut valmiit agenttituotteet: niillä tätä ei saa rakennettua ilman isoa vaivaa.
+- **Pi Durable on kokeellinen:** käyttäjä haluaa rakentaa olemassa olevien teknologioiden päälle avoimilla asiantuntijoilla; siksi core pidetään vaihdettavana.
+
+## O. Termit (englanniksi, jos tarvitaan README:hen tai esittelyyn)
+Tuote: *Agentic Organization OS / Platform*, Agent OS (markkinointinimi, ei tarkka), AI-Native Organization, Digital Twin of an Organization (DTO, vakiintunut), Organizational Simulation Platform. Arkkitehtuuri: Agentic AI, Multi-Agent System, Agent Orchestration, Durable Agent Runtime, Human–Agent Teaming, **Human-on-the-Loop** (agentti toimii valtuuksiensa sisällä, ihminen seuraa ja voi puuttua; tarkempi kuin "fully autonomous"), Delegated Autonomy, Agent-Mediated Communication, Shared Situational Awareness, Organizational Memory. Simulaatio: Agent-Based Modeling/Simulation, Generative Agents, Discrete-Event Simulation, Synthetic Environment, World State, Counterfactual Simulation, What-If, Monte Carlo, Branching Simulation. Aikamatkustus: Event Sourcing, Snapshotting, Event Replay, State Forking, Deterministic Replay, Causal Traceability. Tärkeä ero: Temporal Workflow Replay palauttaa työnkulun, World State Replay liiketoimintatilan. Kolme käyttötilaa: Live Operations, Simulation, Counterfactual.
+
+## P. Pelit ja päätöksenteon nopeudet (parkissa, liittyy jalkapallo-ideaan, ks. A)
+- **Organisaatio pelaa pelejä:** Civilization (strategia) ja Football Manager / fantasy-jalkapallo; peli päättää strategian, koostumus voi olla agenttien tulos. Organisaation olemassaolo perustellaan tuottavuudella: se ei ole itseisarvo.
+- **Scoutit keräävät informaatiota** agenteille (eivät tuota ohjelmistoa).
+- **System One -mallit:** nopeat luokittelijat (JEV, IGV ja variaatiot) yhdistettynä Decision API:in antavat organisaatiolle nopean vaikutustavan; kaksi päätöksenteon nopeutta: nopea (luokittelu, refleksi) ja hidas (agentti, harkinta). DeepMind-tyylinen kotikutoinen kokeilu, mutta eri tutkimuskysymys (organisaatio vs yksittäinen pelaaja).
+- Civ ja FM testaavat eri kykyjä: strategia ja pitkä suunnittelu vs. kokoonpano ja informaation keruu epävarmuudessa.
+- **Kolme tuotetta samalla ytimellä** (ChatGPT:n johtopäätös): organisaatio, simulaatio/pelit, robotiikka.
+
+## Q. Robotiikka: keinotekoinen hermosto (toinen käyttötapa samalle coreolle)
+- **Idea:** ei organisaatiota vaan jatkuva tapahtumavirta, jota säädellään (käyttäjän vertaus: hermosto, hormonit, välittäjäaineet). ChatGPT:n termit: *Artificial Nervous System*, *Homeostatic Cognitive Architecture*, *neuromodulation*, *Behavior Modulation Signals* (ei väitettä oikeista tunteista).
+- **Kohde:** pieni avoimen lähdekoodin kaksijalkainen robotti (ChatGPT tulkitsi Pollen Roboticsin Microduckiksi; käyttäjä sanoi "Microdog/Pollend", varmentamatta) kotieläimen kaltaisena perheavustajana. Vahvempi malli verkosta + oma liike.
+- **Neljä tasoa:** Cognition (Pi Durable, pilvimalli, sekunteja) → Behavior (huomio, eleet, odotus) → Autonomic Regulation (aktiivisuus, epävarmuus, kuormitus, akku) → Reflexes & Motor Control (robotin oma ohjain, ~50 Hz). Kielimalli ei ohjaa liikettä reaaliajassa; verkon katketessa robotti pysähtyy hallitusti ja ilmaisee eleellä, että se miettii.
+- **Moduloivat muuttujat:** `arousal`, `attention`, `socialEngagement`, `uncertainty`, `fatigue`, `curiosity`. Loading-tilat ilmeinä: Thinking, Listening, Unsure, Interested, Resting.
+- **Neljä muistikerrosta:** sensory (lyhytikäinen), working (kuka läsnä, mitä tehdään), episodic (merkittävät tapahtumat, Pi Durable/keskustelumuisti), semantic (opitut tiedot ja luvalliset mieltymykset). Älä tallenna jokaista kuvaa keskusteluhistoriaan.
+- **Esimerkki:** robotti tietää kuka on huoneessa, menee sinne ja valmistelee kontekstin etukäteen, muuttaa sitä äänen mukaan; pitkä selitys näytetään puhelimella.
+- **Käytännön linjaus:** älä lisää ROS 2:ta vain robotin takia; tee ohut adapteri robotin omaan JSON-RPC-rajapintaan (kuvatun mukaan robotd, mediad, tofd). **Kodin yksityisyys:** perheenjäsenten ääni/kuva/rutiinit vain läpinäkyvästi ja suostumuksella, oletuksena paikallisesti.
