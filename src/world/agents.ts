@@ -13,6 +13,12 @@ export type Session = {
 	call(tool: string, args: Record<string, unknown>): Promise<ToolResult>;
 	/** Units this agent has spent on the current virtual day (rebuilt from the history, so a restart does not refill it). */
 	spentToday(): number;
+	/** Requests other agents have made of this agent and it has not answered yet. */
+	inbox(): { id: string; from: string; task: string }[];
+	/** Requests this agent has made that are still unanswered. */
+	pending(): { id: string; to: string; task: string }[];
+	/** Answers a request from the inbox. It becomes history when the shift ends. */
+	reply(id: string, result: string): void;
 };
 /** What a shift reports: the cost, and which brain really did the work (a budget may swap a Tier 2 brain for a Tier 1 one). */
 export type ShiftResult = { units?: number; tier?: 1 | 2; brain?: string; degraded?: boolean } | void;
@@ -43,6 +49,17 @@ export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; unt
 	const byId = new Map(o.agents.map((a) => [a.id, a]));
 	const tools = new SyntheticTools(world as any, o.faults);
 	const rep: RunAgentsReport = { shifts: 0, calls: 0, errors: 0, degraded: 0 };
+	// the handoffs in flight, kept up to date from the history (so a restart finds them again)
+	const open = new Map<string, { id: string; from: string; to: string; task: string }>();
+	let cursor = 0;
+	const catchUp = () => {
+		for (const e of world.eventsSince(cursor)) {
+			cursor = e.seq;
+			const p = e.payload as any;
+			if (e.type === "handoff.requested") open.set(p.id, { id: p.id, from: p.from, to: p.to, task: p.task });
+			else if (e.type === "handoff.completed") open.delete(p.id);
+		}
+	};
 	// units spent per agent on its latest day, from the history
 	const spent = new Map<string, { day: number; units: number }>();
 	for (const e of world.events()) {
@@ -57,7 +74,16 @@ export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; unt
 		const wake = world.takeNext();
 		const agent = byId.get(wake.actor)!;
 		let calls = 0, error = "";
+		catchUp();
+		const replies: { id: string; result: string }[] = [];
 		const session: Session = {
+			inbox: () => [...open.values()].filter((h) => h.to === agent.id && !replies.some((r) => r.id === h.id)).map((h) => ({ id: h.id, from: h.from, task: h.task })),
+			pending: () => [...open.values()].filter((h) => h.from === agent.id).map((h) => ({ id: h.id, to: h.to, task: h.task })),
+			reply: (id, result) => {
+				const h = open.get(id);
+				if (!h || h.to !== agent.id || replies.some((r) => r.id === id)) throw new Error(`reply: ${id} is not a request waiting in ${agent.id}'s inbox`);
+				replies.push({ id, result });
+			},
 			agent: agent.id,
 			now: () => world.now(),
 			call: async (tool, args) => { calls++; return tools.call(tool, args, { agent: agent.id }); },
@@ -69,7 +95,7 @@ export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; unt
 		if (units) { const c = spent.get(agent.id); spent.set(agent.id, { day, units: (c && c.day === day ? c.units : 0) + units }); }
 		if (out.degraded) rep.degraded++;
 		world.applyStep(wake, {
-			events: [{ type: "agent.shift", actor: agent.id, payload: { tier: out.tier ?? agent.brain.tier, brain: out.brain ?? agent.brain.name, calls, units, ...(out.degraded ? { degraded: true } : {}), ...(error ? { error } : {}) } }],
+			events: [...replies.map((r) => ({ type: "handoff.completed", actor: agent.id, payload: { id: r.id, result: r.result } })), { type: "agent.shift", actor: agent.id, payload: { tier: out.tier ?? agent.brain.tier, brain: out.brain ?? agent.brain.name, calls, units, ...(out.degraded ? { degraded: true } : {}), ...(error ? { error } : {}) } }],
 			wakes: [{ actor: agent.id, in: agent.everyMs, kind: "shift" }],
 		});
 		rep.shifts++; rep.calls += calls;

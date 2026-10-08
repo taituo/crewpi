@@ -191,6 +191,18 @@ const TOOLS: Record<string, ToolDef> = {
 	},
 	cert_rotate: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "rotate_cert", service: id }); return `certificate for ${id} rotated`; } },
 	db_failover: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "failover", service: id }); return `failover of ${id} triggered; the standby was promoted`; } },
+	ask_agent: {
+		params: ["agent", "request"], write: true,
+		run: (a, e) => {
+			// like the real tool, the id is case-insensitive and may carry a leading @
+			const to = typeof a.agent === "string" ? a.agent.toLowerCase().replace(/^@/, "") : "";
+			need(/^[a-z][a-z0-9-]{0,40}$/.test(to), "agent must be an agent id such as dev-1");
+			need(typeof a.request === "string" && a.request.trim().length > 0 && a.request.length <= 2000, "request must be a non-empty text of at most 2000 characters");
+			need(to !== e.agent, "an agent cannot ask itself");
+			const ev = e.world.execute({ actor: "hands", kind: "handoff", data: { from: e.agent, to, task: a.request } });
+			return `Asked @${to}. Request ${(ev.find((x) => x.type === "handoff.requested")!.payload as { id: string }).id} is waiting for their answer.`;
+		},
+	},
 	alert_dismiss: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "dismiss", service: id }); return `alerts for ${id} dismissed`; } },
 };
 
