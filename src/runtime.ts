@@ -63,6 +63,10 @@ function setupInference() {
 						provider: "local",
 						baseUrl: inf.localBaseUrl,
 						reasoning: false,
+						// pi-durable gives every conversation a stable session id; pi-ai only sends it to OpenRouter unless told to. The format
+						// "openrouter" is the one that emits `x-session-id`, which is what the inference gateway reads (the "openai" format sends
+						// session_id / x-session-affinity instead).
+						compat: { sendSessionAffinityHeaders: inf.localSessionHeaders, sessionAffinityFormat: "openrouter" },
 						input: inf.localVision ? ["text", "image"] : ["text"],
 						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						contextWindow: 128000,
@@ -429,7 +433,7 @@ function setupSummarizer() {
 		const msg = await models.complete(model, {
 			systemPrompt: SUMMARY_SYSTEM,
 			messages: [{ role: "user", content: `Chunk A:\n${texts[0]}\n\nChunk B:\n${texts[1]}${again}`, timestamp: Date.now() }],
-		});
+		}, { sessionId: "crew-memory-summaries" }); // one stable id: the same long system prompt stays cached on one gateway account
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") throw new Error(msg.errorMessage ?? "summarizer error");
 		return textOf(msg.content).trim();
 	};

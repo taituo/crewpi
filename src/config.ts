@@ -46,6 +46,8 @@ export const config = {
 		localApiKey: env.LOCAL_LLM_API_KEY ?? "",
 		/** Declare that the local endpoint accepts images (vision-capable model behind it). */
 		localVision: env.LOCAL_LLM_VISION === "true",
+		/** Send x-session-id (one stable id per conversation) so a gateway can keep a conversation on one account and its prompt cache warm. */
+		localSessionHeaders: env.LOCAL_LLM_SESSION_HEADERS !== "false",
 		/** Force the scripted offline provider even if keys exist. */
 		forceDemo: env.DEMO_MODE === "true",
 	},
