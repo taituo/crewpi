@@ -1,5 +1,7 @@
 # Architecture decision records (proposals)
 
+> Sober reference. The opinionated, "design bets" version is in [../design-bets.md](../design-bets.md); where they disagree, the bets win.
+
 All records are **Proposed** (Prompt 00). Accepting, amending or rejecting them is the human gate before Prompt 04 starts.
 Format: Context → Options → Recommendation → Consequences → What must be verified.
 
