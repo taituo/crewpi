@@ -44,11 +44,13 @@ o.builder.gapMs = 0;
 o.builder.log = (m) => console.warn(`  [memtree] ${m}`);
 let calls = 0;
 o.builder.summarize = async (texts, level, retry, ctx) => {
-	calls++;
+	const n = ++calls, t = Date.now();
 	const again = retry ? `\n\nYour previous line was ${Buffer.byteLength(retry.previous)} bytes, over the limit of ${o.NODE_BYTES}. Write the whole line again for the same chunks, cutting just enough of the least valuable items so that it ends before this cut:\n${retry.cut}| ← LIMIT` : "";
-	const msg = await models.complete(model, { systemPrompt: o.SUMMARY_SYSTEM, messages: [{ role: "user", content: o.summaryPrompt(texts, level, ctx) + again, timestamp: Date.now() }] }, { sessionId: "crew-needle" });
+	const msg = await models.complete(model, { systemPrompt: o.SUMMARY_SYSTEM, messages: [{ role: "user", content: o.summaryPrompt(texts, level, ctx) + again, timestamp: Date.now() }] }, { sessionId: "crew-needle", signal: AbortSignal.timeout(90_000) });
 	if (msg.stopReason === "error" || msg.stopReason === "aborted") throw new Error(msg.errorMessage ?? "summarizer error");
-	return textOf(msg.content).trim();
+	const out = textOf(msg.content).trim();
+	console.log(`  call ${n} level ${level}${retry ? " (retry)" : ""}: ${Date.now() - t}ms, ${Buffer.byteLength(out)} bytes`);
+	return out;
 };
 
 for (let i = 0; i < N; i++) {
