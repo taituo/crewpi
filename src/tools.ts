@@ -3,7 +3,7 @@ import { CompactionTask, defineExtension, defineTool, hook, section } from "@ear
 import type { Context } from "@earendil-works/chord";
 import { agentById } from "./agents.ts";
 import { backupFor } from "./org/routing.ts";
-import { handoffs } from "./work/index.ts";
+import { cases, handoffs } from "./work/index.ts";
 import { getOrigin } from "./work/handoffs.ts";
 import { newId } from "./work/events.ts";
 import { agentsInChannel, channelById } from "./channels.ts";
@@ -169,6 +169,56 @@ const openChannel = defineTool({
 	},
 });
 
+const caseAddFact = defineTool({
+	name: "case_add_fact",
+	description:
+		"Record a fact in this channel's shared case picture, where every agent and person in the case can see it, with its sources and how sure you are. Use it for what OTHERS need (a root cause, a value you read, a date someone promised), not for your own notes (use memo_note). Same key + different statement from another source shows up as a conflict; pass supersedes (a fact id) to replace one. Not available in private chats.",
+	parameters: Type.Object({
+		key: Type.String({ description: "Short lowercase topic, e.g. checkout.pool_size" }),
+		statement: Type.String({ description: "The fact, one or two sentences" }),
+		sources: Type.Array(Type.String(), { description: 'Where it comes from, e.g. ["tool:k8s_configmap", "message:41", "ticket:PAY-412"]' }),
+		confidence: Type.Union([Type.Literal("confirmed"), Type.Literal("reported"), Type.Literal("inferred"), Type.Literal("unverified")]),
+		supersedes: Type.Optional(Type.String({ description: "Id of the fact this replaces" })),
+	}),
+	replay: "safe",
+	execute: async (args, api) => {
+		try {
+			const { channelId, agentId } = where(api.conversationId);
+			const f = cases.addFact({ caseId: channelId, key: args.key, statement: args.statement, sourceRefs: args.sources, confidence: args.confidence, by: agentId, supersedes: args.supersedes, correlationId: getOrigin(db, channelId, agentId)?.correlationId });
+			return text(`Recorded ${f.factId} (${f.key}, ${f.confidence}).`);
+		} catch (e) {
+			return fail(e);
+		}
+	},
+});
+
+const caseContextTool = defineTool({
+	name: "case_context",
+	description: "Read this channel's shared case picture: who is responsible and who is waiting for whom, what is known (with sources), what is stale, unverified or contradictory, decisions, and work nobody owns. Read it before you act on a case you joined late.",
+	parameters: Type.Object({}),
+	replay: "safe",
+	execute: async (_args, api) => {
+		try {
+			const { channelId } = where(api.conversationId);
+			const c = cases.context(channelId);
+			const line = (f: { key: string; statement: string; confidence: string; sourceRefs: string[] }) => `- ${f.key}: ${f.statement} [${f.confidence}; ${f.sourceRefs.join(", ")}]`;
+			return text([
+				`Responsible: ${c.responsible ?? "nobody yet"}`,
+				c.awaiting.length ? `Waiting for:\n${c.awaiting.map((a) => `- @${a.to} (${a.acknowledged ? "acknowledged" : "NOT yet acknowledged"}${a.overdue ? ", OVERDUE" : ""}): ${a.text}`).join("\n")}` : "Waiting for: nobody",
+				c.conflicts.length ? `CONFLICTS (decide which is right, then supersede):\n${c.conflicts.map((k) => k.facts.map(line).join("\n")).join("\n")}` : "",
+				c.facts.current.length ? `Known:\n${c.facts.current.map(line).join("\n")}` : "Known: nothing recorded yet",
+				c.facts.unverified.length ? `Unverified:\n${c.facts.unverified.map(line).join("\n")}` : "",
+				c.facts.stale.length ? `Stale (not re-observed lately, check before relying):\n${c.facts.stale.map(line).join("\n")}` : "",
+				c.decisions.all.length ? `Decisions:\n${c.decisions.all.slice(0, 10).map((d) => `- ${d.outcome}: ${d.statement} (by ${d.madeBy})`).join("\n")}` : "",
+				c.decisions.conflicting.length ? `CONFLICTING DECISIONS on: ${c.decisions.conflicting.map((d) => d.key).join(", ")}` : "",
+				c.orphanTasks.length ? `Work nobody is on:\n${c.orphanTasks.map((t) => `- ${t.title}`).join("\n")}` : "",
+			].filter(Boolean).join("\n\n"));
+		} catch (e) {
+			return fail(e);
+		}
+	},
+});
+
 const memoNote = defineTool({
 	name: "memo_note",
 	description:
@@ -219,7 +269,7 @@ const memoryZoom = defineTool({
 
 export const CollabExtension = defineExtension({
 	name: "collab",
-	tools: [askAgent, requestApproval, openChannel, renderUi, memoNote, memoRecall, memoryZoom],
+	tools: [askAgent, requestApproval, openChannel, renderUi, memoNote, memoRecall, memoryZoom, caseAddFact, caseContextTool],
 	hooks: [
 		// When Pi compacts the context, replace its linear summary with the OptChat view of the WHOLE history
 		// before the kept tail: recent messages verbatim, older ones ever coarser, every line zoomable.

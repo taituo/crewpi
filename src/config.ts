@@ -86,6 +86,11 @@ export const config = {
 		dueInMs: num(env.HANDOFF_DUE_MS, 3_600_000),
 	},
 
+	case: {
+		/** A fact not re-observed within this long is shown as stale instead of as current. */
+		staleMs: num(env.CASE_FACT_TTL_MS, 86_400_000),
+	},
+
 	policy: {
 		/** The person whose request started a chain may not approve what that chain asks for. Turn off for a one-person setup. */
 		separationOfDuties: env.SEPARATION_OF_DUTIES !== "false",

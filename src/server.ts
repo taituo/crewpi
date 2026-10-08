@@ -19,7 +19,9 @@ import { listSandboxes, startSandboxSweeper, stopSandbox } from "./sandbox.ts";
 import { Registry } from "./org/registry.ts";
 import { seedDefaultOrg } from "./org/seed.ts";
 import { rulePlanner } from "./org/propose.ts";
-import { bus } from "./work/index.ts";
+import { bus, cases, handoffs } from "./work/index.ts";
+import { CaseError } from "./work/case.ts";
+import { HandoffError } from "./work/handoffs.ts";
 import { registerWorkConsumers } from "./work/consumers.ts";
 import { DEFAULT_TENANT } from "./migrations.ts";
 import { getClient, listLive, signalDecision, startIncident } from "./temporal-client.ts";
@@ -241,6 +243,9 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 			saveNote({ agentId: a.agentId, channelId: a.channelId, text: `${a.status === "approved" ? "Approved" : "Rejected"} by ${user.name}${note ? ` ("${note}")` : ""}: ${a.title}`, source: "system" });
 		} catch { /* a note is a convenience, never a reason to fail the decision */ }
 		hub.publish({ type: "approval", approval: a });
+		try {
+			cases.recordDecision({ caseId: a.channelId, key: `${String(a.detail.action ?? "action")}:${String(a.detail.target ?? a.title)}`.toLowerCase().slice(0, 120), statement: a.title, outcome: a.status, madeBy: user.sub, authorityRef: `platform-roles:${user.roles.join(",")}`, approvalId: a.id });
+		} catch { /* private chats have no case picture; a decision record is never a reason to fail the decision */ }
 		approvalBus.emit("decided", a.id);
 		presenceChanged();
 		return json(res, 200, { approval: a });
@@ -397,6 +402,38 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 			}
 		}
 		throw err(404, "no such endpoint");
+	}
+
+	if (m === "GET" && (mm = /^\/api\/channels\/([\w-]+)\/case$/.exec(path))) {
+		if (!canSeeChannel(user.sub, mm[1])) throw err(404, "no such channel");
+		try { return json(res, 200, cases.context(mm[1])); } catch (e) { if (e instanceof CaseError) throw err(e.status, e.message); throw e; }
+	}
+
+	if (m === "GET" && path === "/api/handoffs") {
+		const ch = url.searchParams.get("channel") ?? undefined;
+		if (ch && !canSeeChannel(user.sub, ch)) throw err(404, "no such channel");
+		const st = url.searchParams.get("status");
+		const list = handoffs.list({ channelId: ch, statuses: st ? (st.split(",") as any) : undefined, limit: 200 }).filter((h) => canSeeChannel(user.sub, h.channelId));
+		return json(res, 200, { handoffs: list, watchdog: (await getClient()) ? "temporal" : "off" });
+	}
+
+	if (m === "POST" && (mm = /^\/api\/handoffs\/([\w-]+)\/cancel$/.exec(path))) {
+		if (!perms.operate) throw err(403, "operators only");
+		const h = handoffs.get(mm[1]);
+		if (!h || !canSeeChannel(user.sub, h.channelId)) throw err(404, "no such handoff");
+		try {
+			const r = handoffs.transition(h.handoffId, "cancelled", { by: user.sub, byType: "human", reason: "cancelled by a person", strict: true });
+			auditAs(user, "handoff.cancel", { handoff: h.handoffId });
+			return json(res, 200, { handoff: r.handoff });
+		} catch (e) { if (e instanceof HandoffError) throw err(e.status === 429 ? 409 : e.status, e.message); throw e; }
+	}
+
+	if (m === "GET" && path === "/api/domain-events") {
+		const ch = url.searchParams.get("channel") ?? undefined;
+		if (ch && !canSeeChannel(user.sub, ch)) throw err(404, "no such channel");
+		const visible = (v: string) => v === "org" || (v.startsWith("channel:") && canSeeChannel(user.sub, v.slice(8))) || (v.startsWith("owner:") && v.slice(6) === user.sub);
+		const events = bus.list({ channelId: ch, correlationId: url.searchParams.get("correlation") ?? undefined, limit: Math.min(Number(url.searchParams.get("limit") ?? 200), 500) }).filter((e) => visible(e.visibility));
+		return json(res, 200, { events });
 	}
 
 	if (m === "GET" && path === "/api/budget") return json(res, 200, { budget: budgetState() ?? null });
