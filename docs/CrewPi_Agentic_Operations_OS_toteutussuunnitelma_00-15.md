@@ -92,7 +92,9 @@ Olemassa olevat mekanismit, joita kannattaa hyödyntää:
 - `src/memory.ts`, `src/optchat.ts`: muistiinpanot ja hierarkkinen keskustelumuisti.
 - `src/temporal.ts`, `src/activities.ts`, `src/workflows/incident.js`: työnkulut ja niiden pysyvyys.
 - `src/hub.ts`, `public/app.js`: SSE-tapahtumavirta ja chat-käyttöliittymä.
-- `src/demo.ts`, `src/fakes.ts`: skriptattu demo, joka ei vastaa yleispätevää autonomista mallia.
+- **Mallinajo on oikea.** Agentit ajetaan oikeilla kielimalleilla, käytännössä OpenRouterin kautta (`openrouter/...`, kulukatto `src/budget.ts`). Suoraa `openai`-polkua ei ole ajettu oikealla API:lla (README), ja Anthropic-provideria ei ole kytketty `runtime.ts`:ään. Ero ei siis ole "demo vs oikea" vaan se, mitkä osat ovat oikeaa ja mitkä feikkiä.
+- `src/demo.ts`: skriptattu varapolku ilman inferenssiavainta (tai `DEMO_MODE=true`). Se ei ole normaali ajotapa eikä edusta autonomista mallia.
+- `src/fakes.ts`: Jira-, GitHub-, GitLab-, Grafana- ja muiden integraatioiden deterministinen demodata. Nämä ovat feikkejä mallinajosta riippumatta.
 - `SECURITY.md`: turvallisuusmalli ja todetut prototyypin rajoitukset.
 
 **Huomiot, joita uusi koodi ei saa unohtaa:**
