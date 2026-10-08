@@ -82,6 +82,21 @@ CREATE TABLE IF NOT EXISTS actor_rng (actor TEXT PRIMARY KEY, state TEXT NOT NUL
 		return w;
 	}
 
+	/** Reads which spec and seed a world file was made with, without opening it as a world. */
+	static describe(path: string): { spec: string; seed: string } | undefined {
+		let db: DatabaseSync | undefined;
+		try {
+			db = new DatabaseSync(path, { readOnly: true });
+			const get = (k: string) => (db!.prepare("SELECT value FROM meta WHERE key = ?").get(k) as { value: string } | undefined)?.value;
+			const spec = get("spec"), seed = get("seed");
+			return spec !== undefined && seed !== undefined ? { spec, seed } : undefined;
+		} catch {
+			return undefined;
+		} finally {
+			db?.close();
+		}
+	}
+
 	private prepare() {
 		const p = (sql: string) => this.db.prepare(sql);
 		this.q = {

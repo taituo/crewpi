@@ -3,6 +3,8 @@
 // bit-for-bit reproducible and resumable (docs/world/README.md rules 4-5), so every stream
 // is derived from an explicit seed and every stream can be snapshotted and restored.
 
+import type { RngFactory } from "./types.ts";
+
 export type RngState = string; // JSON-safe, opaque to callers
 
 // 64-bit cyrb-style mixer over a string; seed picks an independent lane.
@@ -160,6 +162,19 @@ export class SeededRng {
 	// parent keeps running, so the child stream must not depend on when the fork happens.
 	fork(label: string): SeededRng {
 		// WHY stringify the pair: keeps ("a", "b:c") and ("a:b", "c") distinct.
-		return new SeededRng(JSON.stringify([this.orig, label]));
+		const pair = JSON.stringify([this.orig, label]);
+		// WHY a fixed-size token and not the pair itself: nesting the pair in the next pair doubles the escaping at every
+		// level (a fork of a fork of ... overflowed a JS string at about depth 25). 128 bits of hash keep the child's
+		// seed, and so its saved state, the same size at any depth; a collision between labels is not a practical concern.
+		const [w0, w1] = hash64(pair, 0x2545f491);
+		const [w2, w3] = hash64(pair, 0x7f4a7c15);
+		const hex = (n: number) => n.toString(16).padStart(8, "0");
+		return new SeededRng(`fork:${hex(w0)}${hex(w1)}${hex(w2)}${hex(w3)}`);
 	}
 }
+
+/** What the engine needs: make a stream from a seed, and bring one back from its saved state. */
+export const seededRng: RngFactory = {
+	create: (seed) => new SeededRng(seed),
+	restore: (state) => SeededRng.fromState(state),
+};

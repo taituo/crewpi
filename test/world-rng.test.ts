@@ -211,3 +211,24 @@ test("speed: 1M next() calls finish in under 500ms", () => {
 	const ms = performance.now() - t0;
 	assert.ok(ms < 500, `1M next() took ${ms.toFixed(1)}ms`);
 });
+
+// ---- added in review (the original brief did not cover nested forks) ----
+test("forks of forks keep a small, bounded state (the seed text must not grow with depth)", () => {
+	let r = new SeededRng("crew");
+	const sizes: number[] = [];
+	for (let depth = 1; depth <= 40; depth++) { r = r.fork(`level-${depth}`); if (depth % 10 === 0) sizes.push(r.state().length); }
+	assert.ok(sizes.every((n) => n < 300), `state length at depths 10/20/30/40: ${sizes} (must stay small)`);
+	// still deterministic and still independent
+	let r2 = new SeededRng("crew");
+	for (let depth = 1; depth <= 40; depth++) r2 = r2.fork(`level-${depth}`);
+	assert.equal(r.next(), r2.next());
+	assert.notEqual(new SeededRng("crew").fork("a").fork("b").next(), new SeededRng("crew").fork("b").fork("a").next(), "order of labels matters");
+});
+
+test("a restored child continues its own stream and forks like the original child", () => {
+	const child = new SeededRng("crew").fork("arrivals");
+	for (let i = 0; i < 10; i++) child.next();
+	const back = SeededRng.fromState(child.state());
+	assert.equal(back.next(), child.next());
+	assert.equal(back.fork("x").next(), child.fork("x").next());
+});

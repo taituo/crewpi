@@ -23,6 +23,9 @@ const HELP = `crew - command line for Crew
   crew validate -f <file>                           same as apply --dry-run
   crew export [<organization name or id>] [--format yaml|json] [-o file]
   crew orgs                                         list organizations
+  crew world new <name> [--spec ticker] [--seed <text>]     a synthetic world (one SQLite file under DATA_DIR/worlds)
+  crew world run <name> (--days N | --until DAY) [--slice D] [--max-steps N]
+  crew world status <name>      |      crew world list
   crew handoffs [--channel <name>] [--status requested,accepted,...] [--json]
   crew case <channel> [--json]                      the shared case picture: who waits for whom, facts, conflicts, decisions
   crew events [--channel <name>] [--correlation <id>] [--limit 100] [--json]   domain events (what happened to the work)
@@ -37,7 +40,8 @@ const { values: v, positionals: pos } = parseArgs({
 		replay: { type: "boolean" }, start: { type: "string" }, end: { type: "string" }, channel: { type: "string" }, kind: { type: "string" }, json: { type: "boolean" }, "include-dm": { type: "boolean" }, limit: { type: "string" },
 		"create-realm": { type: "string" }, entity: { type: "string" },
 		file: { type: "string", short: "f" }, "dry-run": { type: "boolean" }, "no-adopt": { type: "boolean" },
-		format: { type: "string" }, status: { type: "string" }, correlation: { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
+		format: { type: "string" }, status: { type: "string" }, correlation: { type: "string" },
+		seed: { type: "string" }, spec: { type: "string" }, days: { type: "string" }, until: { type: "string" }, slice: { type: "string" }, "max-steps": { type: "string" }, output: { type: "string", short: "o" }, help: { type: "boolean", short: "h" },
 	},
 });
 
@@ -46,7 +50,7 @@ const die = (msg: string, code = 1): never => {
 	process.exit(code);
 };
 
-const COMMANDS = ["send", "replay", "create-realm", "apply", "validate", "export", "orgs", "handoffs", "case", "events", "help"];
+const COMMANDS = ["send", "replay", "create-realm", "apply", "validate", "export", "orgs", "handoffs", "case", "events", "world", "help"];
 const cmd = pos[0] && COMMANDS.includes(pos[0]) ? pos[0] : v.send !== undefined ? "send" : v.replay ? "replay" : v["create-realm"] !== undefined ? "create-realm" : v.help || !pos.length ? "help" : die(`unknown command "${pos[0]}"\n\n${HELP}`);
 const rest = pos[0] === cmd ? pos.slice(1) : pos;
 
@@ -140,6 +144,66 @@ async function main() {
 			applyManifest(reg, actor, { realm: { name }, entities: v.entity ? [{ id: slug(v.entity), name: v.entity }] : [] });
 			store.audit(`cli:${who}`, "realm.create", { realm: slug(name), entity: v.entity ?? null }, `cli:${who}`);
 			return console.log(`realm ${slug(name)} ready${v.entity ? `, entity ${slug(v.entity)}` : ""}`);
+		}
+		case "world": {
+			const { existsSync, mkdirSync, readdirSync } = await import("node:fs");
+			const { join } = await import("node:path");
+			const { config } = await import("./config.ts");
+			const { World, DAY } = await import("./world/engine.ts");
+			const { SPECS } = await import("./world/specs/index.ts");
+			const { seededRng } = await import("./world/rng.ts");
+			const dir = join(config.dataDir, "worlds");
+			const sub = rest[0] ?? die("usage: crew world new|run|status|list");
+			if (sub === "list") {
+				if (!existsSync(dir)) return console.log("no worlds yet");
+				for (const f of readdirSync(dir).filter((f) => f.endsWith(".sqlite"))) console.log(f.replace(/\.sqlite$/, ""));
+				return;
+			}
+			const name = rest[1] ?? die(`usage: crew world ${sub} <name>`);
+			if (!/^[a-z0-9][a-z0-9_-]{0,39}$/i.test(name)) die("a world name is 1-40 letters, digits, - or _");
+			const path = join(dir, `${name}.sqlite`);
+			if (sub === "new") {
+				const spec = v.spec ?? "ticker";
+				if (!SPECS[spec]) die(`unknown spec "${spec}" (available: ${Object.keys(SPECS).join(", ")})`);
+				if (existsSync(path)) die(`world "${name}" already exists`);
+				mkdirSync(dir, { recursive: true });
+				const w = World.open(path, { spec: SPECS[spec], seed: v.seed ?? name, rng: seededRng, name });
+				const st = w.status(); w.close();
+				return console.log(`world ${name} created (spec ${spec}, seed ${st.seed}, ${st.pending} wake-ups scheduled)`);
+			}
+			const known = existsSync(path) ? World.describe(path) : undefined;
+			if (!known) die(`no world "${name}" (create it with: crew world new ${name})`);
+			const open = () => World.open(path, { spec: SPECS[known!.spec] ?? die(`this build does not know the spec "${known!.spec}"`), seed: known!.seed, rng: seededRng, name });
+			if (sub === "status") {
+				const w = open(); const st = w.status(); w.close();
+				for (const [k, val] of Object.entries(st)) console.log(`${k}: ${val}`);
+				return;
+			}
+			if (sub === "run") {
+				if (v.days === undefined && v.until === undefined) die("run needs --days N or --until DAY");
+				const { announceSlice } = await import("./world/report.ts");
+				const { bus } = await import("./work/index.ts");
+				const w = open();
+				const slice = v.slice ? Number(v.slice) : Infinity;
+				if (!(slice > 0)) die("--slice must be a positive number of days");
+				const maxSteps = v["max-steps"] ? Number(v["max-steps"]) : undefined;
+				let remaining = v.days !== undefined ? Number(v.days) : 0, i = 0;
+				const target = v.until !== undefined ? Number(v.until) : 0;
+				if (v.days !== undefined && !(remaining > 0)) die("--days must be a positive number");
+				for (;;) {
+					const day = Math.floor(w.status().vtime / DAY);
+					const step = v.until !== undefined ? Math.min(slice, target - day) : Math.min(slice, remaining);
+					if (!(step > 0)) break;
+					const rep = v.until !== undefined ? w.run({ untilDay: day + step, maxSteps }) : w.run({ days: step, maxSteps });
+					announceSlice(bus, w, rep);
+					console.log(`slice ${++i}: day ${rep.fromDay} -> ${rep.toDay}, ${rep.steps} steps, ${rep.events} events, ${rep.wallMs} ms, hash ${w.hash().slice(0, 12)}${rep.stopped !== "done" ? `  (stopped: ${rep.stopped})` : ""}`);
+					if (rep.stopped !== "done") break;
+					remaining -= step;
+				}
+				w.close();
+				return;
+			}
+			die(`unknown world command "${sub}" (new, run, status, list)`);
 		}
 		case "handoffs": {
 			const { handoffs } = await import("./work/index.ts");

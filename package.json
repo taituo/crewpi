@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/server.ts",
     "test": "node scripts/preflight.mjs && node --test test/*.test.ts",
-    "crew": "node src/cli.ts"
+    "crew": "node src/cli.ts",
+    "world:check": "node scripts/preflight.mjs && node --test test/world-*.test.ts"
   },
   "dependencies": {
     "@earendil-works/chord": "1.0.4",

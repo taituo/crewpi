@@ -11,7 +11,7 @@ process.env.SESSION_SECRET = "test-secret";
 
 const { World, DAY, HOUR, MIN } = await import("../src/world/engine.ts");
 const { tickerSpec } = await import("../src/world/specs/ticker.ts");
-const { rngDouble } = await import("./helpers/rng-double.ts");
+const { seededRng } = await import("../src/world/rng.ts");
 const { announceSlice } = await import("../src/world/report.ts");
 const { migrate } = await import("../src/migrate.ts");
 const { MIGRATIONS } = await import("../src/migrations.ts");
@@ -20,7 +20,7 @@ const { EventBus } = await import("../src/work/events.ts");
 const dir = mkdtempSync(join(tmpdir(), "crew-world-files-"));
 let n = 0;
 const file = () => join(dir, `w${++n}.sqlite`);
-const open = (path: string, seed = "crew-1") => World.open(path, { spec: tickerSpec, seed, rng: rngDouble });
+const open = (path: string, seed = "crew-1") => World.open(path, { spec: tickerSpec, seed, rng: seededRng });
 
 test("(a) determinism: the same seed gives the same world, event for event", () => {
 	const a = open(file()), b = open(file());
@@ -37,7 +37,7 @@ test("(b) snapshot and resume: stopping at day 10 and continuing equals one unin
 	const whole = open(file()); whole.run({ days: 30 });
 	const path = file();
 	const part = open(path); part.run({ days: 10 }); const at10 = part.hash(); part.close();
-	const again = World.open(path, { spec: tickerSpec, seed: "crew-1", rng: rngDouble }); // a fresh process would do exactly this
+	const again = World.open(path, { spec: tickerSpec, seed: "crew-1", rng: seededRng }); // a fresh process would do exactly this
 	assert.equal(again.status().day, 10);
 	assert.equal(again.hash(), at10, "reopening restores the same history");
 	again.run({ days: 20 });
@@ -53,7 +53,7 @@ test("(b2) a crash in the middle of a step loses nothing and changes nothing", (
 	let steps = 0;
 	assert.throws(() => w.run({ days: 20, onStep: () => { if (++steps === 1777) throw new Error("power cut"); } }), /power cut/);
 	w.close();
-	const back = World.open(path, { spec: tickerSpec, seed: "crew-1", rng: rngDouble });
+	const back = World.open(path, { spec: tickerSpec, seed: "crew-1", rng: seededRng });
 	assert.ok(back.status().events > 0, "committed work survived");
 	back.run({ untilDay: 20 }); // absolute: "days" counts from the clock, which sits mid-day after a crash
 	assert.equal(back.hash(), whole.hash(), "after the crash the world arrives at exactly the uninterrupted history");
@@ -99,7 +99,7 @@ test("(e) summary events reach the main event log as synthetic, not the raw stre
 });
 
 test("(f) time semantics: the clock jumps when nothing is runnable, and a timer fires at exactly its time", () => {
-	const w = World.open(file(), { spec: tickerSpec, seed: "quiet", rng: rngDouble, quiet: true }); // no recurring actors
+	const w = World.open(file(), { spec: tickerSpec, seed: "quiet", rng: seededRng, quiet: true }); // no recurring actors
 	w.scheduleAt({ actor: "probe", at: 5 * MIN, kind: "ping" });
 	w.scheduleAt({ actor: "probe", at: 400 * DAY, kind: "ping" });
 	const t0 = Date.now();
@@ -130,7 +130,7 @@ test("(g) budgets of a run: a step limit stops cleanly and the run can continue"
 test("a world refuses to open with another seed or another spec", () => {
 	const path = file();
 	open(path, "seed-A").close();
-	assert.throws(() => World.open(path, { spec: tickerSpec, seed: "seed-B", rng: rngDouble }), /seed/);
-	assert.throws(() => World.open(path, { spec: { ...tickerSpec, name: "other" }, seed: "seed-A", rng: rngDouble }), /spec/);
+	assert.throws(() => World.open(path, { spec: tickerSpec, seed: "seed-B", rng: seededRng }), /seed/);
+	assert.throws(() => World.open(path, { spec: { ...tickerSpec, name: "other" }, seed: "seed-A", rng: seededRng }), /spec/);
 	rmSync(path, { force: true });
 });
