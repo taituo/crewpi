@@ -159,10 +159,10 @@ export class Registry {
 			this.db.prepare("INSERT INTO org_nodes (id, version_id, tenant_id, kind, name, attrs) VALUES (?,?,?,?,?,?)").run(nid, to, tenantId, n.kind, n.name, n.attrs);
 		}
 		for (const e of this.db.prepare("SELECT * FROM org_edges WHERE version_id = ?").all(from) as Row[]) {
-			this.db.prepare("INSERT INTO org_edges (id, version_id, tenant_id, from_node, to_node, type, class, granted_by, valid_to, policy_version_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(id("e"), to, tenantId, nodeMap.get(e.from_node), nodeMap.get(e.to_node), e.type, e.class, e.granted_by, e.valid_to, e.policy_version_id, e.created_at);
+			this.db.prepare("INSERT INTO org_edges (id, version_id, tenant_id, from_node, to_node, type, class, granted_by, valid_to, policy_version_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(id("e"), to, tenantId, nodeMap.get(e.from_node)!, nodeMap.get(e.to_node)!, e.type, e.class, e.granted_by, e.valid_to, e.policy_version_id, e.created_at);
 		}
 		for (const m of this.db.prepare("SELECT * FROM org_memberships WHERE version_id = ?").all(from) as Row[]) {
-			this.db.prepare("INSERT INTO org_memberships (version_id, tenant_id, participant_id, node_id, role, valid_from, valid_to) VALUES (?,?,?,?,?,?,?)").run(to, tenantId, m.participant_id, nodeMap.get(m.node_id), m.role, m.valid_from, m.valid_to);
+			this.db.prepare("INSERT INTO org_memberships (version_id, tenant_id, participant_id, node_id, role, valid_from, valid_to) VALUES (?,?,?,?,?,?,?)").run(to, tenantId, m.participant_id, nodeMap.get(m.node_id)!, m.role, m.valid_from, m.valid_to);
 		}
 		for (const a of this.db.prepare("SELECT * FROM org_agent_configs WHERE version_id = ?").all(from) as Row[]) {
 			this.db.prepare("INSERT INTO org_agent_configs (version_id, tenant_id, participant_id, model, instructions, tools) VALUES (?,?,?,?,?,?)").run(to, tenantId, a.participant_id, a.model, a.instructions, a.tools);
