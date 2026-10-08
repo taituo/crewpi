@@ -448,7 +448,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 
 	if (m === "GET" && path === "/api/audit") {
 		if (!perms.approve) throw err(403, "approvers only");
-		return json(res, 200, { audit: store.listAudit() });
+		// An approver may read the audit trail, but not what was said in a private chat: titles of approvals (and any
+		// detail naming such a channel) are replaced for everyone who cannot see that chat.
+		const audit = store.listAudit().map((e) => {
+			const approval = typeof e.detail.approvalId === "number" ? store.getApproval(e.detail.approvalId) : undefined;
+			const channel = approval?.channelId ?? (typeof e.detail.channel === "string" ? e.detail.channel : undefined);
+			if (channel && !canSeeChannel(user.sub, channel)) return { ...e, detail: { ...(typeof e.detail.approvalId === "number" ? { approvalId: e.detail.approvalId } : {}), redacted: "private chat" } };
+			return e;
+		});
+		return json(res, 200, { audit });
 	}
 
 	throw err(404, "no such endpoint");
