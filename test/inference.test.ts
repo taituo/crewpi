@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const seen: any[] = [];
+const sessions: (string | undefined)[] = []; // x-session-id of each request, aligned with `seen`
 const sse = (res: any, delta: any, finish: string | null = null) =>
 	res.write(`data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", created: 1, model: "mock", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
 
@@ -18,6 +19,7 @@ const mock = createServer((req, res) => {
 	req.on("end", () => {
 		const r = JSON.parse(body);
 		seen.push(r);
+		sessions.push(req.headers["x-session-id"] as string | undefined);
 		res.writeHead(200, { "content-type": "text/event-stream" });
 		const last = r.messages[r.messages.length - 1];
 		if (last.role === "tool") {
@@ -92,6 +94,24 @@ test("agent answers through an OpenAI-compatible endpoint, calling a real tool",
 	assert.ok(!first.tools.some((t: any) => t.function.name.startsWith("k8s_")), "developer is NOT offered cluster tools");
 	assert.match(JSON.stringify(first.messages[0]), /Developer/);
 	assert.match(JSON.stringify(first.messages), /\[#development\] Alice/);
+});
+
+test("every model request carries a session id: stable within a conversation, different between conversations (so a gateway can route sticky)", async () => {
+	// The inference gateway spreads accounts by x-session-id and keeps one conversation on one account so its prompt cache stays warm.
+	const developer = sessions.slice(0, 2); // the first test made two requests in the developer's conversation (tool call, then answer)
+	assert.equal(developer.length, 2);
+	assert.ok(developer.every((v) => typeof v === "string" && v.length >= 8), `session id present: ${JSON.stringify(developer)}`);
+	assert.equal(new Set(developer).size, 1, "one conversation, one session id");
+	const login = await fetch(`${base}/auth/login?as=alice`, { redirect: "manual" });
+	const cookie = (login.headers.getSetCookie()[0] ?? "").split(";")[0];
+	const before = seen.length;
+	await fetch(`${base}/api/channels/development/messages`, { method: "POST", headers: { cookie, "content-type": "application/json", "x-requested-with": "crew" }, body: JSON.stringify({ text: "@reviewer what is in the repo?" }) });
+	for (let i = 0; i < 60 && seen.length < before + 2; i++) await new Promise((r) => setTimeout(r, 250));
+	const reviewer = sessions.slice(before, before + 2);
+	assert.equal(reviewer.length, 2, "the reviewer's conversation made its two requests");
+	assert.ok(reviewer.every((v) => typeof v === "string" && v.length >= 8));
+	assert.equal(new Set(reviewer).size, 1);
+	assert.notEqual(reviewer[0], developer[0], "another conversation, another session id");
 });
 
 test("a viewer cannot post", async () => {
