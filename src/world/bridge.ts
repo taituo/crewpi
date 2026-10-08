@@ -3,6 +3,7 @@
 // (read-only) and writes only messages; nothing flows back into the world.
 import { db, store } from "../db.ts";
 import { hub } from "../hub.ts";
+import { channelById } from "../channels.ts"; // also creates the channels table: the bridge must not depend on someone else having loaded it
 import { Observer, type ChatMessage } from "./observe.ts";
 
 const NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -24,7 +25,7 @@ export function syncWorldChannel(path: string, name: string): { added: number } 
 	const id = worldChannelId(name);
 	const obs = new Observer(path); // throws "no such world file" before anything is created
 	try {
-		db.prepare("INSERT OR IGNORE INTO channels (id, name, topic, kind, agents, created_by, created_at) VALUES (?,?,?,?,?,?,?)").run(
+		if (!channelById(id)) db.prepare("INSERT OR IGNORE INTO channels (id, name, topic, kind, agents, created_by, created_at) VALUES (?,?,?,?,?,?,?)").run(
 			id, id, `Synthetic world "${name}": a simulated company. A read-only window: nothing said here is real, and nobody here answers.`, "standing", "[]", "system", Date.now(),
 		);
 		const last = db.prepare("SELECT meta FROM messages WHERE channel_id = ? ORDER BY id DESC LIMIT 1").get(id) as { meta: string } | undefined;

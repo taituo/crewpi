@@ -41,6 +41,10 @@ export const config = {
 		tickMs: num(env.WORLD_TICK_MS, 4000),
 		team: env.WORLD_TEAM ?? "ops=3,dev=2",
 		faults: env.WORLD_FAULTS ?? "heavy",
+		/** "model": the operators think with the local OpenAI-compatible endpoint (LOCAL_LLM_*); anything else: rules. */
+		brain: env.WORLD_BRAIN ?? "rules",
+		model: env.WORLD_MODEL ?? "",
+		budget: env.WORLD_BUDGET ? num(env.WORLD_BUDGET, 60) : undefined,
 	},
 
 	inference: {

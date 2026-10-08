@@ -540,7 +540,7 @@ void startTemporalWorker();
 loadExtraTickets();
 startWatcher();
 server.listen(config.port, () => console.log(`${config.brand.name} listening on :${config.port} (auth=${config.auth.mode})`));
-if (config.world.autorun) startLiveWorld({ dir: join(config.dataDir, "worlds"), name: config.world.autorun, tickMs: config.world.tickMs, team: config.world.team, faults: config.world.faults });
+if (config.world.autorun) startLiveWorld({ dir: join(config.dataDir, "worlds"), name: config.world.autorun, tickMs: config.world.tickMs, team: config.world.team, faults: config.world.faults, brain: config.world.brain === "model" ? { kind: "model", baseUrl: config.inference.localBaseUrl, apiKey: config.inference.localApiKey, model: config.world.model || config.inference.localModel, budget: config.world.budget } : undefined });
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
 	process.on(sig, async () => {

@@ -65,6 +65,9 @@ spec:
             - { name: WORLD_TICK_MS, value: "${WORLD_TICK_MS}" }
             - { name: WORLD_TEAM, value: "${WORLD_TEAM}" }
             - { name: WORLD_FAULTS, value: "${WORLD_FAULTS}" }
+            - { name: WORLD_BRAIN, value: "${WORLD_BRAIN}" }
+            - { name: WORLD_MODEL, value: "${WORLD_MODEL}" }
+            - { name: WORLD_BUDGET, value: "${WORLD_BUDGET}" }
             - { name: SANDBOX_IMAGE, value: "${SANDBOX_IMAGE}" }
             - { name: TEMPORAL_ADDRESS, value: "temporal.ai-workflows.svc.cluster.local:7233" }
             - { name: LOCAL_LLM_BASE_URL, value: "${LOCAL_LLM_BASE_URL}" }

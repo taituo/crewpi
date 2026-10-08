@@ -1,7 +1,7 @@
 // A team of agents for a world: who they are, which brains they use, how the tools misbehave. Remembered next to the world file,
 // so `crew world run` in a new process builds exactly the same team.
 import { HOUR } from "./engine.ts";
-import { withAgents, budgeted, recording, replaying, type AgentSpec, type Tape } from "./agents.ts";
+import { withAgents, budgeted, recording, replaying, type AgentSpec, type Brain, type Tape } from "./agents.ts";
 import { modelBrain } from "./model-brain.ts";
 import { opsBrain, rulesDev } from "./brains.ts";
 import type { FaultPlan } from "./itops/tools.ts";
@@ -34,6 +34,18 @@ export function parseTeam(text: string, faults = "none"): TeamFile {
 
 export const teamIds = (t: TeamFile) => [...Array.from({ length: t.ops }, (_, i) => `ops-${i + 1}`), ...Array.from({ length: t.dev }, (_, i) => `dev-${i + 1}`)];
 export const teamSpec = <S>(base: WorldSpec<S>, t: TeamFile) => withAgents(base, teamIds(t), HOUR);
+/** A pager: the model is consulted only when a ticket is open or a colleague has asked something; a quiet shift costs nothing. */
+export function pager(brain: Brain): Brain {
+	return {
+		tier: brain.tier, name: brain.name,
+		async shift(s) {
+			const open = await s.call("jira_search", { status: "Open" });
+			if (!open.isError && /^no issues/.test(open.text) && s.inbox().length === 0) return { tier: 1, brain: "pager-idle", units: 0 };
+			return brain.shift(s);
+		},
+	};
+}
+
 /** The agents of a team. Operators think with rules, a model (optionally on a daily budget, recorded on `tape`), or a replay of a tape; developers always use rules. */
 export function teamAgents(t: TeamFile, ctx: { baseUrl?: string; apiKey?: string; tape?: Tape } = {}): AgentSpec[] {
 	const devs = teamIds(t).filter((id) => id.startsWith("dev-")), rules = opsBrain({ devs });
@@ -41,7 +53,8 @@ export function teamAgents(t: TeamFile, ctx: { baseUrl?: string; apiKey?: string
 	if (t.brain === "model") {
 		if (!ctx.baseUrl || !t.model || !ctx.tape) throw new Error("a model team needs an endpoint (LOCAL_LLM_BASE_URL), a model name and a tape");
 		const m = modelBrain({ baseUrl: ctx.baseUrl, apiKey: ctx.apiKey ?? "", model: t.model, role: "ops" });
-		ops = recording(t.budget !== undefined ? budgeted(m, rules, { unitsPerDay: t.budget }) : m, ctx.tape);
+		const awake = pager(m);
+		ops = recording(t.budget !== undefined ? budgeted(awake, rules, { unitsPerDay: t.budget }) : awake, ctx.tape);
 	} else if (t.brain === "replay") {
 		if (!ctx.tape) throw new Error("a replay team needs a tape");
 		ops = replaying(ctx.tape);
