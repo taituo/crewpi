@@ -98,3 +98,39 @@ test("a tiny budget degrades gracefully instead of failing", () => {
 	assert.ok(segs.length >= 1 && segs.at(-1)!.hi === 39);
 	assert.ok(segs.reduce((n, s) => n + Buffer.byteLength(s.text) + 22, 0) <= 1200);
 });
+
+// Taelin's rollback push (rollback_state_list.js), the reference the UniiChat spec derives the merge order from.
+type PushList = { keep: number; life: number; state: number; older: PushList | null } | null;
+function push(s: number, states: PushList): PushList {
+	if (states === null) return { keep: 0, life: 0, state: s, older: null };
+	const { keep, life, state, older } = states;
+	if (keep === 0) return { keep: 1, life, state, older };
+	if (life > 0) return { keep: 0, life: 0, state: s, older: { keep: 0, life: life - 1, state, older } };
+	return { keep: 0, life, state: s, older: push(state, older) };
+}
+const startsOf = (l: PushList) => { const a: number[] = []; for (; l; l = l.older) a.push(l.state); return a.sort((x, y) => x - y); };
+
+test("the merge order is Taelin's push: with a line budget the view equals his list at every step", () => {
+	type S = { level: number; idx: number; lo: number; hi: number };
+	const viewOf = (T: number, lines: number) => {
+		let segs: S[] = Array.from({ length: T }, (_, i) => ({ level: 0, idx: i, lo: i, hi: i }));
+		while (segs.length > lines) {
+			let best = -1, bs = -1;
+			for (let i = 0; i < segs.length - 1; i++) {
+				const a = segs[i], b = segs[i + 1];
+				if (a.level !== b.level || a.idx % 2 !== 0 || b.idx !== a.idx + 1) continue;
+				const sc = o.due(T, b.hi, a.level);
+				if (sc > bs) { bs = sc; best = i; }
+			}
+			const a = segs[best], b = segs[best + 1];
+			segs = [...segs.slice(0, best), { level: a.level + 1, idx: a.idx / 2, lo: a.lo, hi: b.hi }, ...segs.slice(best + 2)];
+		}
+		return segs.map((s) => s.lo);
+	};
+	let list: PushList = null;
+	for (let t = 0; t < 300; t++) {
+		list = push(t, list);
+		const want = startsOf(list);
+		assert.deepEqual(viewOf(t + 1, want.length), want, `t=${t}`);
+	}
+});

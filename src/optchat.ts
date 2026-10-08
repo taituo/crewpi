@@ -97,6 +97,13 @@ export function nodeText(conv: number, level: number, idx: number, fallback: boo
 	return out;
 }
 
+/**
+ * How due a sibling pair is for merging: how long ago it ended, in units of its own size. `T` messages in the chat,
+ * `last` the pair's last message (0-based), `level` the pair's line level. Measured from the LAST message, not the first
+ * (UniiChat spec 3.2). With a line budget this reproduces Taelin's rollback `push` exactly (test/optchat.test.ts).
+ */
+export const due = (T: number, last: number, level: number) => (T - last) / 2 ** level;
+
 export type Seg = { level: number; idx: number; lo: number; hi: number; text: string; role?: Role };
 
 /**
@@ -116,7 +123,7 @@ export function fitView(conv: number, upTo: number, budget: number): Seg[] {
 		for (let i = 0; i < segs.length - 1; i++) {
 			const a = segs[i], b = segs[i + 1];
 			if (a.level !== b.level || a.idx % 2 !== 0 || b.idx !== a.idx + 1) continue;
-			const score = (upTo - b.hi) / 2 ** a.level; // age relative to level: the "most due" pair
+			const score = due(upTo + 1, b.hi, a.level);
 			if (score > bestScore) { bestScore = score; best = i; }
 		}
 		if (best < 0) break;
