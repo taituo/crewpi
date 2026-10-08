@@ -214,8 +214,8 @@ const memoRecall = defineTool({
 const memoryZoom = defineTool({
 	name: "memory_zoom",
 	description:
-		"Expand a line of the compressed conversation memory. Lines look like '#2.5 12 msgs ...'; zooming shows the finer lines below it, and a '#0.N' line shows the original message in full. Use it before relying on a detail that a coarse line only hints at.",
-	parameters: Type.Object({ id: Type.String({ description: 'Line id such as "#2.5"' }) }),
+		"Open a line of the compressed conversation memory. Lines look like '40+8|...' (the first message and how many messages the line covers). zoom('40+8') shows the two lines it was made from; zoom('40+1') shows message 40 whole. Use it before relying on a detail that a coarse line only hints at. The old form '#3.5' also works.",
+	parameters: Type.Object({ id: Type.String({ description: 'Line id such as "40+8" (first message + how many it covers)' }) }),
 	replay: "safe",
 	execute: async (args, api) => {
 		try {

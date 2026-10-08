@@ -33,7 +33,9 @@ test("builder cascades summaries up the tree with an LLM-style summariser", asyn
 	const s = o.stats(2);
 	assert.equal(s.leaves, 16);
 	assert.equal(s.nodes, 8 + 4 + 2 + 1, "every block of a perfect tree got a node");
-	assert.equal(s.llmNodes, 15);
+	// Level-1 lines are model-written (two 400-byte messages do not fit one line); the lines above them are short enough
+	// to be joined for free, so they cost no model call.
+	assert.equal(s.llmNodes, 8);
 });
 
 test("recent messages need no summary yet, so idle history is not summarised eagerly", async () => {
@@ -85,11 +87,12 @@ test("without any summariser the view still works (extractive fallback) and zoom
 	const top = segs[0];
 	const z = o.zoom(5, `#${top.level}.${top.idx}`);
 	assert.match(z, /Finer detail:/);
-	assert.match(z, /#\d+\.\d+/);
+	assert.match(z, /\d+\+\d+\|/);
 	assert.throws(() => o.zoom(5, "nonsense"), /must look like/);
 	assert.throws(() => o.zoom(5, "#0.999"), /no such line/);
+	assert.equal(o.zoom(5, `${top.lo}+${top.hi - top.lo + 1}`), z, "the id+n form of the same line gives the same answer");
 	const text = o.renderView(5, segs);
-	assert.ok(text.startsWith(o.VIEW_MARKER) && /DATA about the past/.test(text) && /#\d\.\d/.test(text));
+	assert.ok(text.startsWith(o.VIEW_MARKER) && /DATA about the past/.test(text) && /\n\d+\+\d+\|/.test(text));
 });
 
 test("a tiny budget degrades gracefully instead of failing", () => {
@@ -133,4 +136,78 @@ test("the merge order is Taelin's push: with a line budget the view equals his l
 		const want = startsOf(list);
 		assert.deepEqual(viewOf(t + 1, want.length), want, `t=${t}`);
 	}
+});
+
+// ---- UniiChat spec: free nodes, id+n addressing, size retries ------------------------------------------------
+
+test("free nodes: lines that fit together are joined with a newline, with no model call", async () => {
+	const conv = 910;
+	o.builder.recentVerbatim = 16; // the builder is shared by all tests in this file
+	const levels: number[] = [];
+	o.builder.summarize = async (_t, level) => { levels.push(level); return "summary"; }; // set first: filling already starts the builder
+	fill(conv, 40, 30); // ~46-byte messages: 2 -> ~92, 4 -> ~190, 8 -> ~380 bytes still fit one line; 16 -> ~760 do not
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.ok(levels.length > 0 && levels.every((l) => l >= 4), `only lines that no longer fit were summarized (levels called: ${[...new Set(levels)]})`);
+	const a = o.nodeText(conv, 0, 0, false)!, b = o.nodeText(conv, 0, 1, false)!;
+	assert.equal(o.nodeText(conv, 1, 0, false), `${a}\n${b}`);
+	assert.equal(o.nodeText(conv, 2, 0, false), `${o.nodeText(conv, 1, 0, false)}\n${o.nodeText(conv, 1, 1, false)}`);
+	const st = o.stats(conv);
+	assert.ok(st.nodes > st.llmNodes, "free nodes are built but not counted as model-written");
+});
+
+test("a merge whose lines do not fit still goes to the summariser", async () => {
+	const conv = 911;
+	o.builder.recentVerbatim = 16; // the builder is shared by all tests in this file
+	let calls = 0;
+	o.builder.summarize = async () => { calls++; return "merged"; };
+	fill(conv, 40, 400);
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.ok(calls > 0);
+});
+
+test("id+n addressing: the view shows message ids and spans, and zoom accepts both forms", () => {
+	const conv = 912;
+	fill(conv, 20, 300);
+	o.builder.summarize = undefined;
+	const view = o.renderView(conv, o.fitView(conv, 19, 2500));
+	const lines = view.split("\n").filter((l) => /^\d+\+\d+\|/.test(l));
+	assert.ok(lines.length >= 3, "lines look like 8+4|text");
+	assert.ok(!/#\d+\.\d+/.test(view), "no tree coordinates in the view");
+	assert.equal(o.zoom(conv, "4+4"), o.zoom(conv, "#2.1"), "id+n and the old form are the same line");
+	assert.match(o.zoom(conv, "4+4"), /(^|\n)\s*(4\+2|6\+2)\|/, "children are shown in the same form");
+	assert.match(o.zoom(conv, "7+1"), /message 7/, "n = 1 gives the message whole");
+	for (const bad of ["5+4", "4+3", "4+0", "24+8", "x+4"]) assert.throws(() => o.zoom(conv, bad), /no line|no such line|must look like/, bad);
+});
+
+test("a line that is too long is retried with the cut marker, up to 5 times, keeping the shortest", async () => {
+	const conv = 913;
+	o.builder.recentVerbatim = 16; // the builder is shared by all tests in this file
+	const seen: (undefined | { previous: string; cut: string })[] = [];
+	o.builder.summarize = async (_t, _l, retry) => { seen.push(retry); return retry ? "short enough" : "x".repeat(900); };
+	fill(conv, 40, 400);
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.equal(seen[0], undefined, "the first try carries no retry info");
+	const first = seen.findIndex((r) => r !== undefined);
+	assert.ok(first > 0, "a too-long answer triggers a retry");
+	assert.equal(seen[first]!.previous.length, 900);
+	assert.equal(Buffer.byteLength(seen[first]!.cut), o.NODE_BYTES, "the cut is the first NODE bytes of the long line");
+	assert.equal(o.nodeText(conv, 1, 0, false), "short enough");
+});
+
+test("when every retry is too long the shortest answer wins and there are at most 5 tries per line", async () => {
+	const conv = 914;
+	o.builder.recentVerbatim = 16; // the builder is shared by all tests in this file
+	let calls = 0;
+	o.builder.gapMs = 0;
+	o.builder.summarize = async () => "y".repeat(Math.max(1000, 2000 - ++calls * 100)); // always over the limit, shrinking slowly
+	fill(conv, 18, 400); // one level-1 line is due (18 leaves, the newest 16 stay verbatim)
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.equal(calls, 5, "exactly the allowed number of tries");
+	const node = o.nodeText(conv, 1, 0, false)!;
+	assert.ok(Buffer.byteLength(node) <= o.NODE_BYTES + 40, "bounded by the safety clip");
+	assert.ok(node.startsWith("y"), "a line was still produced and used");
 });

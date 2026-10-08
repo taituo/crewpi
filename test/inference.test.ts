@@ -230,8 +230,8 @@ test("compaction replaces old history with the compressed memory view, which rea
 		const sent = JSON.stringify(seen.slice(mark).map((x) => x.messages));
 		assert.match(sent, /Compressed memory of the earlier conversation/, "the OptChat view replaced the old history");
 		assert.match(sent, /memory_zoom/);
-		assert.match(sent, /#0\.\d+ user/, "recent-enough lines are addressable");
-		assert.ok(!/note 0: the staging password rotation happens on day 10, remember it/.test(sent) || /#\d\.\d+ /.test(sent), "old messages are only present through the view");
+		assert.match(sent, /\\n\d+\+1\|user/, "recent-enough lines are addressable by message id (id+1)");
+		assert.ok(!/note 0: the staging password rotation happens on day 10, remember it/.test(sent) || /\\n\d+\+\d+\|/.test(sent), "old messages are only present through the view");
 		assert.ok(seen.slice(mark).some((x) => x.tools.some((t: any) => t.function.name === "memory_zoom")), "the model can call memory_zoom");
 	} finally {
 		child3.kill();
