@@ -47,11 +47,13 @@ export function opsBrain(o: { devs: string[] }): Brain {
 				const d = await diagnose(s, t.service, t.summary);
 				if (d.act) { await s.call(d.act[0], d.act[1]); continue; }
 				// at most three questions per ticket, none while one is open, at least eight hours apart: after that it is the developers' ticket
-				const asked = s.requests().filter((r) => r.task.includes(t.key + " "));
-				const last = asked.reduce((m, r) => Math.max(m, r.at), -Infinity);
-				if (t.age >= 2 && o.devs.length && asked.length < 3 && !asked.some((r) => r.open) && s.now() - last >= 8 * 3_600_000) {
-					const dev = o.devs[Number(t.key.slice(4)) % o.devs.length];
-					await s.call("ask_agent", { agent: dev, request: `Ticket ${t.key} on service ${t.service}: ${t.summary}. I could not find the cause from the logs. Please look at service ${t.service} and fix it if you can.` });
+				if (t.age >= 2 && o.devs.length) {
+					const asked = s.requests().filter((r) => r.task.includes(t.key + " "));
+					const last = asked.reduce((m, r) => Math.max(m, r.at), -Infinity);
+					if (asked.length < 3 && !asked.some((r) => r.open) && s.now() - last >= 8 * 3_600_000) {
+						const dev = o.devs[Number(t.key.slice(4)) % o.devs.length];
+						await s.call("ask_agent", { agent: dev, request: `Ticket ${t.key} on service ${t.service}: ${t.summary}. I could not find the cause from the logs. Please look at service ${t.service} and fix it if you can.` });
+					}
 				}
 			}
 		},
