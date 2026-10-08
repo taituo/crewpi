@@ -6,7 +6,7 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { assertBudget } from "./budget.ts";
 import { createRegistry, Harness, watchEvents, type Conversation } from "@earendil-works/pi-durable";
-import { SUMMARY_SYSTEM, addLeaf, builder, fitView, leafCount, leafRawByEntry, stats, type Role } from "./optchat.ts";
+import { SUMMARY_SYSTEM, addLeaf, boundedSummary, builder, fitView, leafCount, leafRawByEntry, stats, summaryPrompt, type Role } from "./optchat.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { AGENTS, agentById, type AgentDef } from "./agents.ts";
 import { channelById } from "./channels.ts";
@@ -410,16 +410,18 @@ function setupSummarizer() {
 		: [...resolved.values()].find((r) => r.provider !== "demo");
 	builder.log = (m) => console.warn(`[memtree] ${m}`);
 	if (!ref) return; // scripted demo: extractive summaries only
-	builder.summarize = async (texts) => {
-		if (ref.provider === "openrouter") await assertBudget(); // over budget: the builder falls back to extractive summaries
+	builder.summarize = async (texts, level, sctx) => {
 		const model = models.getModel(ref.provider, ref.modelId);
 		if (!model) throw new Error("summarizer model not available");
-		const msg = await models.complete(model, {
-			systemPrompt: SUMMARY_SYSTEM,
-			messages: [{ role: "user", content: `Chunk A:\n${texts[0]}\n\nChunk B:\n${texts[1]}`, timestamp: Date.now() }],
-		});
-		if (msg.stopReason === "error" || msg.stopReason === "aborted") throw new Error(msg.errorMessage ?? "summarizer error");
-		return textOf(msg.content).trim();
+		const ask = async (history: { role: "user" | "assistant"; content: string }[]) => {
+			if (ref.provider === "openrouter") await assertBudget(); // over budget: the builder falls back to extractive summaries
+			// A rewrite round is one request that shows the earlier attempts, so no assistant-message plumbing is needed.
+			const content = history.map((m) => (m.role === "user" ? m.content : `Your previous reply:\n${m.content}`)).join("\n\n");
+			const msg = await models.complete(model, { systemPrompt: SUMMARY_SYSTEM, messages: [{ role: "user", content, timestamp: Date.now() }] });
+			if (msg.stopReason === "error" || msg.stopReason === "aborted") throw new Error(msg.errorMessage ?? "summarizer error");
+			return textOf(msg.content).trim();
+		};
+		return boundedSummary(ask, summaryPrompt(texts, level, sctx));
 	};
 }
 

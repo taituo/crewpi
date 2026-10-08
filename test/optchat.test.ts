@@ -33,7 +33,7 @@ test("builder cascades summaries up the tree with an LLM-style summariser", asyn
 	const s = o.stats(2);
 	assert.equal(s.leaves, 16);
 	assert.equal(s.nodes, 8 + 4 + 2 + 1, "every block of a perfect tree got a node");
-	assert.equal(s.llmNodes, 15);
+	assert.equal(s.llmNodes, 8, "only level 1 needs the model: the pairs above are short and are joined as they are");
 });
 
 test("recent messages need no summary yet, so idle history is not summarised eagerly", async () => {
@@ -97,4 +97,86 @@ test("a tiny budget degrades gracefully instead of failing", () => {
 	const segs = o.fitView(6, 39, 500);
 	assert.ok(segs.length >= 1 && segs.at(-1)!.hi === 39);
 	assert.ok(segs.reduce((n, s) => n + Buffer.byteLength(s.text) + 22, 0) <= 1200);
+});
+
+test("a long message is summarised by the model as a leaf, with its role, and the view shows that summary", async () => {
+	const seen: { texts: string[]; level: number; roles?: unknown }[] = [];
+	o.builder.summarize = async (texts, level, ctx) => {
+		seen.push({ texts, level, roles: ctx?.roles });
+		return level === 0 ? "LEAF-SUMMARY" : "merged";
+	};
+	o.builder.gapMs = 0;
+	o.builder.recentVerbatim = 0;
+	fill(8, 4, 3000);
+	await o.builder.idle();
+	const leafCalls = seen.filter((c) => c.level === 0);
+	assert.ok(leafCalls.length >= 3, "each long message got a leaf summary call");
+	assert.ok(leafCalls[0].texts[0].length > 2500, "the model saw the whole message, not a clipped one");
+	assert.deepEqual(leafCalls[0].roles, ["user"]);
+	const first = o.fitView(8, 0, 10_000)[0];
+	assert.equal(first.text, "LEAF-SUMMARY");
+	assert.ok(o.zoom(8, "#0.0").length > 2500, "zoom still returns the original");
+});
+
+test("merges receive the memory before the span and who spoke", async () => {
+	let ctx: any;
+	o.builder.summarize = async (texts, level, c) => {
+		if (level === 1 && !ctx) ctx = { texts, c };
+		return "s";
+	};
+	o.builder.recentVerbatim = 0;
+	fill(9, 8, 400);
+	await o.builder.idle();
+	assert.ok(ctx, "a level-1 merge ran");
+	assert.deepEqual(ctx.c.roles, ["user", "assistant"]);
+	assert.ok(ctx.texts[0].startsWith("user: ") && ctx.texts[1].startsWith("assistant: "), "inputs are tagged with the speaker");
+	const later = [] as any[];
+	o.builder.summarize = async (texts, level, c) => (later.push({ level, c }), "s");
+	fill(9, 8, 400, 8);
+	await o.builder.idle();
+	assert.ok(later.some((l) => l.level === 1 && l.c.context.length > 0), "later spans see the earlier memory");
+});
+
+test("lines that already fit in one are joined without a model call", async () => {
+	let calls = 0;
+	o.builder.summarize = async () => (calls++, "x");
+	o.builder.recentVerbatim = 0;
+	fill(10, 4, 30);
+	await o.builder.idle();
+	assert.equal(calls, 0);
+	assert.equal(o.stats(10).nodes, 2 + 1);
+	assert.equal(o.stats(10).llmNodes, 0);
+	const top = o.fitView(10, 3, 60)[0];
+	assert.match(top.text, /user: message 0/, "joined text keeps the content and the speaker");
+});
+
+test("boundedSummary sends overlong replies back with the cut marked and keeps the shortest", async () => {
+	const long = "word ".repeat(200);
+	const asked: string[] = [];
+	const ok = await o.boundedSummary(async (h) => (asked.push(h.at(-1)!.content), asked.length < 3 ? long : "short enough"), "go");
+	assert.equal(ok, "short enough");
+	assert.equal(asked.length, 3);
+	assert.match(asked[1], /⟦CUT⟧/);
+	assert.match(asked[1], new RegExp(`limit is ${o.NODE_BYTES}`));
+	const never = await o.boundedSummary(async () => long, "go", 2);
+	assert.ok(Buffer.byteLength(never) <= o.NODE_BYTES, "cut at the limit when every attempt was too long");
+	await assert.rejects(o.boundedSummary(async () => "  ", "go"), /empty/);
+	assert.match(o.summaryPrompt(["a", "b"], 1, { context: "earlier" }), new RegExp(`-{${o.NODE_BYTES}}`));
+});
+
+test("extractive nodes are upgraded once a summariser exists", async () => {
+	o.builder.summarize = undefined;
+	o.builder.recentVerbatim = 0;
+	fill(11, 4, 400);
+	await o.builder.idle();
+	const before = o.stats(11);
+	assert.equal(before.llmNodes, 0);
+	assert.ok(before.nodes > 0);
+	o.builder.summarize = async () => "now by model";
+	o.builder.gapMs = 0;
+	o.builder.backfill(11);
+	await o.builder.idle();
+	const after = o.stats(11);
+	assert.equal(after.nodes, before.nodes);
+	assert.ok(after.llmNodes > 0, "extractive nodes were rebuilt by the model");
 });
