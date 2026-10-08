@@ -4,6 +4,7 @@ import { createModels, createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { assertBudget } from "./budget.ts";
 import { acquireLease, type Lease } from "./lock.ts";
 import { createRegistry, Harness, watchEvents, type Conversation } from "@earendil-works/pi-durable";
@@ -47,6 +48,10 @@ function setupInference() {
 		models.setProvider(openrouterProvider()); // reads OPENROUTER_API_KEY
 		providersAvailable.push("openrouter");
 	}
+	if (inf.opencodeKey && !inf.forceDemo) {
+		models.setProvider(opencodeGoProvider()); // reads OPENCODE_API_KEY
+		providersAvailable.push("opencode-go");
+	}
 	if (inf.localBaseUrl && inf.localModel && !inf.forceDemo) {
 		models.setProvider(
 			createProvider({
@@ -83,7 +88,7 @@ function setupInference() {
 	providersAvailable.push("demo");
 
 	for (const a of AGENTS) {
-		const override = process.env[`AGENT_${a.id.toUpperCase()}_MODEL`]; // "provider/model"
+		const override = process.env[`AGENT_${a.id.toUpperCase()}_MODEL`] || inf.defaultModel; // "provider/model"
 		let ref: ModelRef = a.model;
 		if (override?.includes("/")) {
 			const [provider, ...rest] = override.split("/");

@@ -1,6 +1,6 @@
 // All runtime configuration comes from the environment so the same image runs locally and in k3s.
 // Keys arrive from files and secrets, often with a trailing newline that would corrupt an Authorization header.
-for (const k of ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "LOCAL_LLM_API_KEY"]) if (process.env[k]) process.env[k] = process.env[k]!.trim();
+for (const k of ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY", "LOCAL_LLM_API_KEY"]) if (process.env[k]) process.env[k] = process.env[k]!.trim();
 const env = process.env;
 
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -50,6 +50,10 @@ export const config = {
 	inference: {
 		openaiKey: env.OPENAI_API_KEY ?? "",
 		openrouterKey: env.OPENROUTER_API_KEY ?? "",
+		/** OpenCode Go subscription key (pi-ai provider "opencode-go"). */
+		opencodeKey: env.OPENCODE_API_KEY ?? "",
+		/** "provider/model" used by every agent that has no AGENT_<ID>_MODEL of its own. */
+		defaultModel: env.AGENT_DEFAULT_MODEL ?? "",
 		/** Soft spend cap in USD for OpenRouter (the key has its own, higher hard limit at OpenRouter). */
 		openrouterBudget: num(env.OPENROUTER_BUDGET_USD, 5),
 		/** Any OpenAI-compatible chat endpoint (vLLM, Ollama, LiteLLM...). */
