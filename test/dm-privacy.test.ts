@@ -204,7 +204,6 @@ test(
   "audit does not leak private approval titles to people who cannot see the chat",
   {
     timeout: 60_000,
-    todo: "KNOWN LEAK (SECURITY.md): GET /api/audit is unfiltered, so a decided private approval title is visible to approvers who cannot see the chat; do not fix product code here",
   },
   async () => {
     const stash = (globalThis as any).__dmpriv as { C: string; dataDir: string };

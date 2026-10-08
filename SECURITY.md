@@ -35,4 +35,4 @@ from its prompt.
 - **Any approver can approve any request,** including one they triggered. There are no per-person spend limits.
 - **Sessions are stateless signed cookies** (8 h); role changes apply at the next login.
 - **One workspace replica.** Pi Durable allows one process per storage. Pi Durable itself is experimental upstream.
-- **Audit log** records approvals and actions but may contain approval titles from private chats (approvers can read it).
+- **Audit log** records approvals and actions. Entries about an approval in a private chat are shown to approvers who cannot see that chat with the title removed (only the approval id and "private chat" remain); this is checked by `test/dm-privacy.test.ts`. Other free-text details written by future code must follow the same rule: name the channel in the entry so it can be redacted.
