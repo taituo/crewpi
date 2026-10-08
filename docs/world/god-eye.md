@@ -1,0 +1,25 @@
+# The god eye: watching a world
+
+```
+crew world new demo --spec itops:none --team ops=3,dev=2 --faults heavy --seed godeye
+crew world run demo --days 20
+crew world watch demo --port 8810        # then open http://127.0.0.1:8810
+```
+
+`watch` is a **read-only** view of a world file (the SQLite connection itself refuses writes; a test tries). It works while the world is running (WAL), and on a finished one. It listens on 127.0.0.1 by default and has no login: do not bind it to a public address (`--host`) without something in front of it.
+
+![the god eye](img/god-eye.png)
+
+What you see:
+- **Services**: each service's real condition (ok / degraded / down), pods, version. Derived from the open incidents, never stored separately.
+- **Open incidents**: ticket, service, severity, how long, how many fix attempts. The **god eye** switch adds the hidden cause the agents are never shown.
+- **Conversation**: what the agents asked each other (`ops-1 → dev-2`), the answers, the fixes they ran, and what monitoring reported, read from the history.
+- **Events**: the raw history (routine `agent.shift` events hidden by default).
+- **Time slider**: drag to any event number; services, incidents, conversation and the charts' marker show the world as it was then (state = nearest daily snapshot + the events after it, so it is exact, and cheap even a year in).
+- **Team** and **Trends** (cumulative customer pain, open incidents, new and resolved per day, handoffs).
+
+![scrubbed back to day 7, god eye on](img/god-eye-scrub.png)
+
+API (all GET): `/api/info`, `/api/view?seq=N[&god=1]`, `/api/chat?since=S&limit=L`, `/api/events?since=S&limit=L[&type=T][&actor=A]`, `/api/series`. Limits are clamped (2000). Code: `src/world/observe.ts` (Observer), `src/world/watch-server.ts`, `src/world/ui/world.html` (one self-contained page, no dependencies).
+
+Not there yet (honest list): control (pause, speed, inject, kill/spawn, forks: that is M5, and needs a writer, so it will be a separate, authenticated thing); a map beyond the six tiles; a chat where a human can talk to an agent in the world; multi-world overview; sound-like polish. The page was checked in a real headless browser (no JS errors, screenshots above), but not on a phone.

@@ -15,12 +15,14 @@ export type ItOpsState = {
 	replicas: Record<ServiceId, number>;
 	incidents: Record<string, Incident>;
 	nextId: number;
+	handoffs: Record<string, { id: string; from: string; to: string; task: string; status: "requested" | "completed" | "escalated"; at: number; result?: string }>;
+	nextHandoff: number;
 	stats: { opened: number; resolved: number; worse: number; impactResolved: number };
 };
 
 export const initial = (): ItOpsState => ({
 	replicas: Object.fromEntries(SERVICES.map((s) => [s, BASE_REPLICAS])) as Record<ServiceId, number>,
-	incidents: {}, nextId: 1, stats: { opened: 0, resolved: 0, worse: 0, impactResolved: 0 },
+	incidents: {}, nextId: 1, handoffs: {}, nextHandoff: 1, stats: { opened: 0, resolved: 0, worse: 0, impactResolved: 0 },
 });
 
 const open = (s: ItOpsState) => Object.values(s.incidents).filter((i) => i.status === "open");
@@ -63,6 +65,20 @@ export function reduce(s: ItOpsState, e: WorldEvent): ItOpsState {
 			// What an action does to the world regardless of any incident (a scale-up changes the replica count).
 			const a = p.action as Action;
 			if (a.type === "scale" && a.service && a.replicas) s.replicas[a.service] = a.replicas;
+			break;
+		}
+		case "handoff.requested":
+			s.handoffs[p.id] = { id: p.id, from: p.from, to: p.to, task: p.task, status: "requested", at: e.vtime };
+			s.nextHandoff++;
+			break;
+		case "handoff.completed": {
+			const h = s.handoffs[p.id];
+			if (h) { h.status = "completed"; h.result = p.result; }
+			break;
+		}
+		case "handoff.escalated": {
+			const h = s.handoffs[p.id];
+			if (h && h.status === "requested") h.status = "escalated";
 			break;
 		}
 		case "incident.worsened": {

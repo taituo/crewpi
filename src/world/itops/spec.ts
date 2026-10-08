@@ -85,10 +85,23 @@ export function itopsSpec(policy: Policy): WorldSpec<ItOpsState> {
 	const hands: Actor<ItOpsState> = {
 		id: "hands",
 		step: ({ state, wake }) => {
+			// A colleague asks another colleague for help: the request is history, and the watchdog starts counting.
+			if (wake.kind === "handoff") {
+				const id = `hand_${state.nextHandoff}`, from = String(wake.data?.from), to = String(wake.data?.to), task = String(wake.data?.task);
+				return { events: [{ type: "handoff.requested", actor: `tool:${from}`, payload: { id, from, to, task } }], wakes: [{ actor: "watchdog", in: 4 * HOUR, kind: "check", data: { id } }] };
+			}
 			const action = wake.data?.action as unknown as Action, by = String(wake.data?.by ?? "tool:unknown");
 			const { events, touched } = applyTo(state, action, by);
 			events.push({ type: "action.performed", actor: by, payload: { action, affected: touched } });
 			return { events };
+		},
+	};
+	/** An unanswered request is escalated to people, once, after four hours. */
+	const watchdog: Actor<ItOpsState> = {
+		id: "watchdog",
+		step: ({ state, wake }) => {
+			const id = String(wake.data?.id);
+			return state.handoffs[id]?.status === "requested" ? { events: [{ type: "handoff.escalated", actor: "watchdog", payload: { id, reason: "no answer within 4 h" } }] } : {};
 		},
 	};
 	const responder: Actor<ItOpsState> = {
@@ -109,7 +122,7 @@ export function itopsSpec(policy: Policy): WorldSpec<ItOpsState> {
 		name: `itops:${policy}`,
 		initial,
 		reduce,
-		actors: [chaos, escalator, responder, hands],
+		actors: [chaos, escalator, responder, hands, watchdog],
 		start: (rng) => [{ actor: "chaos", at: nextArrival(0, rng), kind: "arrive" }],
 	};
 }

@@ -43,7 +43,7 @@ test("same names and same parameter names as the real tools they stand in for", 
 
 test("deny by absence: no live write tool exists in the synthetic set, and the world code cannot import a live module", () => {
 	const w = open(); const t = new SyntheticTools(w);
-	const liveWrite = ["k8s_apply_from_repo", "repo_write", "sbx_exec", "sbx_write", "sbx_read", "sbx_ls", "sbx_import_repo", "request_approval", "open_channel", "ask_agent", "jira_comment"];
+	const liveWrite = ["k8s_apply_from_repo", "repo_write", "sbx_exec", "sbx_write", "sbx_read", "sbx_ls", "sbx_import_repo", "request_approval", "open_channel", "jira_comment"];
 	for (const name of liveWrite) assert.ok(!t.names().includes(name), `${name} must not exist in a synthetic world`);
 	assert.equal(call(t, "k8s_apply_from_repo", {}).isError, true, "calling an absent tool is an error, not a surprise");
 	assert.match(text(t, "repo_write", {}), /no such tool/i);

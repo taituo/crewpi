@@ -139,7 +139,9 @@ const TOOLS: Record<string, ToolDef> = {
 	jira_search: {
 		params: ["text", "status", "assignee"], write: false,
 		run: (a, e) => {
-			const rows = Object.values(e.state.incidents).map((i) => {
+			// only the tickets that can match are turned into rows (a long run has thousands of resolved ones)
+			const wantStatus = a.status ? String(a.status).toLowerCase() : "";
+			const rows = Object.values(e.state.incidents).filter((i) => !wantStatus || (i.status === "open" ? "open" : "done") === wantStatus).map((i) => {
 				const m = symptoms(e.state, { ...i, status: "open" }, e.now);
 				const alert = m.alerts[0] ?? `${i.service} reports a problem`;
 				return { key: `OPS-${100 + Number(i.id.slice(4))}`, status: i.status === "open" ? "Open" : "Done", priority: ["Low", "Medium", "High"][i.severity - 1], at: i.openedAt, summary: `${i.service}: ${alert}` };
@@ -191,6 +193,18 @@ const TOOLS: Record<string, ToolDef> = {
 	},
 	cert_rotate: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "rotate_cert", service: id }); return `certificate for ${id} rotated`; } },
 	db_failover: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "failover", service: id }); return `failover of ${id} triggered; the standby was promoted`; } },
+	ask_agent: {
+		params: ["agent", "request"], write: true,
+		run: (a, e) => {
+			// like the real tool, the id is case-insensitive and may carry a leading @
+			const to = typeof a.agent === "string" ? a.agent.toLowerCase().replace(/^@/, "") : "";
+			need(/^[a-z][a-z0-9-]{0,40}$/.test(to), "agent must be an agent id such as dev-1");
+			need(typeof a.request === "string" && a.request.trim().length > 0 && a.request.length <= 2000, "request must be a non-empty text of at most 2000 characters");
+			need(to !== e.agent, "an agent cannot ask itself");
+			const ev = e.world.execute({ actor: "hands", kind: "handoff", data: { from: e.agent, to, task: a.request } });
+			return `Asked @${to}. Request ${(ev.find((x) => x.type === "handoff.requested")!.payload as { id: string }).id} is waiting for their answer.`;
+		},
+	},
 	alert_dismiss: { params: ["service"], write: true, run: (a, e) => { const id = svc(a.service, "service"); act(e, { type: "dismiss", service: id }); return `alerts for ${id} dismissed`; } },
 };
 
@@ -208,6 +222,9 @@ function misreport(tool: string, text: string): string {
 		default: return text.replace(/\d+(\.\d+)?/g, (n) => String(Math.round(Number(n) * 0.5 * 10) / 10));
 	}
 }
+
+/** The tools an agent is offered: names and parameter names exactly as the real tools have them. */
+export const toolCatalog = () => Object.entries(TOOLS).map(([name, d]) => ({ name, params: [...d.params], write: d.write }));
 
 export class SyntheticTools {
 	private world: World<ItOpsState>;
