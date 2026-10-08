@@ -211,3 +211,56 @@ test("when every retry is too long the shortest answer wins and there are at mos
 	assert.ok(Buffer.byteLength(node) <= o.NODE_BYTES + 40, "bounded by the safety clip");
 	assert.ok(node.startsWith("y"), "a line was still produced and used");
 });
+
+test("a long message gets a model-made leaf summary, shown in the view instead of head+tail clipping", async () => {
+	const conv = 920;
+	o.builder.recentVerbatim = 2;
+	o.builder.gapMs = 0;
+	const calls: { level: number; texts: string[]; ctx?: any }[] = [];
+	o.builder.summarize = async (texts, level, _r, ctx) => { calls.push({ level, texts, ctx }); return level === 0 ? "LEAFSUM" : "NODESUM"; };
+	for (let i = 0; i < 6; i++) {
+		const { idx, created } = o.addLeaf(conv, 3000 + i, i % 2 ? "assistant" : "user", i === 1 ? "short reply" : `long ${i} ` + "word ".repeat(300), 1_700_000_000_000 + i * 1000);
+		if (created) o.builder.onLeaf(conv, idx);
+	}
+	await o.builder.idle();
+	assert.ok(calls.some((c) => c.level === 0), "the long messages were summarised one by one");
+	assert.ok(!calls.some((c) => c.level === 0 && c.texts[0] === "short reply"), "a message that fits one line is not sent to the model");
+	assert.equal(o.nodeText(conv, 0, 0, false), "LEAFSUM");
+	assert.equal(o.nodeText(conv, 0, 1, false), "short reply");
+	const view = o.fitView(conv, 3, 100_000);
+	assert.equal(view[0].text, "LEAFSUM");
+	assert.match(o.zoom(conv, "0+1"), /long 0 word/, "zoom still returns the original message");
+});
+
+test("merges get the speakers and the memory before the span", async () => {
+	const conv = 921;
+	o.builder.recentVerbatim = 0;
+	o.builder.gapMs = 0;
+	const seen: { level: number; texts: string[]; ctx?: any }[] = [];
+	o.builder.summarize = async (texts, level, _r, ctx) => { seen.push({ level, texts, ctx }); return `S${level}`; };
+	fill(conv, 8, 400);
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	const l1 = seen.filter((c) => c.level === 1);
+	assert.ok(l1.length >= 2);
+	assert.match(l1[0].texts[0], /^(user|assistant|tool): /, "level-1 inputs say who spoke");
+	assert.equal(l1[0].ctx.context, "", "the first span has nothing before it");
+	assert.ok(l1[1].ctx.context.length > 0, "a later span sees the memory before it");
+	assert.ok(o.summaryPrompt(l1[1].texts, 1, l1[1].ctx).includes("<before>"));
+});
+
+test("lines that were only extracted are rebuilt once a summariser exists", async () => {
+	const conv = 922;
+	o.builder.recentVerbatim = 0;
+	o.builder.gapMs = 0;
+	o.builder.summarize = undefined;
+	fill(conv, 4, 400);
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.ok(o.stats(conv).nodes > 0 && o.stats(conv).llmNodes === 0, "only extractive lines so far");
+	o.builder.summarize = async (_t, level) => `LLM${level}`;
+	o.builder.backfill(conv);
+	await o.builder.idle();
+	assert.equal(o.nodeText(conv, 1, 0, false), "LLM1");
+	assert.ok(o.stats(conv).llmNodes > 0);
+});
