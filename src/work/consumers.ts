@@ -69,5 +69,28 @@ export function registerWorkConsumers() {
 		},
 	});
 
+	// Delivers the outcome of a handoff to whoever asked. Without this an agent that delegates never learns the answer:
+	// the recipient replies in the channel, the handoff is marked completed, and the requester is not even woken.
+	bus.register({
+		name: "return",
+		types: (t) => ["handoff.completed", "handoff.rejected", "handoff.failed"].includes(t),
+		handle: async (e) => {
+			const h = handoffs.get(String(e.payload.handoffId));
+			if (!h || channelById(h.channelId)?.kind === "dm") return; // a private chat never has handoffs, and nothing is delivered there
+			const requester = agentById(h.from);
+			if (!requester || h.from === h.to) return; // a workflow, a person or the system asked: they have their own way to see the result
+			if (!bridge.submitToAgent) throw new Error("agent runtime is not up yet");
+			const ref = /^message:(\d+)$/.exec(h.resultRef ?? "");
+			const answer = (ref ? store.getMessage(Number(ref[1]))?.text : undefined)?.trim();
+			const ask = `"${h.text.replace(/\s+/g, " ").slice(0, 160)}"`;
+			const text = e.type === "handoff.completed"
+				? `[handoff result] @${h.to} has answered your request ${ask}.${answer ? `\n\nTheir answer:\n${answer.slice(0, 3000)}` : "\n\nThey finished without a recorded answer; look in the channel."}`
+				: e.type === "handoff.rejected"
+					? `[handoff result] @${h.to} declined your request ${ask}${h.reason ? `: ${h.reason}` : ""}. Decide whether to ask someone else or tell the humans.`
+					: `[handoff result] @${h.to} failed on your request ${ask}${h.reason ? `: ${h.reason}` : ""}. Decide whether to retry, ask someone else or tell the humans.`;
+			await bridge.submitToAgent({ channelId: h.channelId, agentId: h.from, text, from: { kind: "agent", id: h.to, name: agentById(h.to)?.name ?? h.to }, requestId: `result:${h.handoffId}`, depth: Math.max(0, h.depth - 1), card: false });
+		},
+	});
+
 	bus.log = (m) => console.warn(`[events] ${m}`);
 }
