@@ -32,24 +32,32 @@ const hours = (age: string) => { const m = /^(\d+)([smhd])$/.exec(age); return m
 
 /**
  * An on-call operator following a runbook: tickets -> logs -> a fix. Each fix is read back from the world on the next ticket,
- * so one outage behind two tickets is fixed once. A ticket the runbook cannot explain for two hours goes to a developer.
+ * so one outage behind two tickets is fixed once. A ticket the runbook cannot explain for two hours goes to a developer
+ * (chosen by ticket number, so work is spread), unless somebody already asked about that ticket.
  */
-export const rulesOps: Brain = {
-	tier: 1,
-	name: "rules-ops",
-	async shift(s: Session) {
-		const list = await s.call("jira_search", { status: "Open" });
-		if (list.isError) return;
-		const tickets = [...list.text.matchAll(/^(OPS-\d+)\s+\[Open\].*?Unassigned\s+(\S+) ago\s+([a-z]+): (.*)$/gm)].map((m) => ({ key: m[1], age: hours(m[2]), service: m[3], summary: m[4] }));
-		for (const t of tickets) {
-			const d = await diagnose(s, t.service, t.summary);
-			if (d.act) { await s.call(d.act[0], d.act[1]); continue; }
-			if (t.age >= 2 && !s.pending().some((p) => p.task.includes(t.key))) {
-				await s.call("ask_agent", { agent: "dev-1", request: `Ticket ${t.key} on service ${t.service}: ${t.summary}. I could not find the cause from the logs. Please look at service ${t.service} and fix it if you can.` });
+export function opsBrain(o: { devs: string[] }): Brain {
+	return {
+		tier: 1,
+		name: "rules-ops",
+		async shift(s: Session) {
+			const list = await s.call("jira_search", { status: "Open" });
+			if (list.isError) return;
+			const tickets = [...list.text.matchAll(/^(OPS-\d+)\s+\[Open\].*?Unassigned\s+(\S+) ago\s+([a-z]+): (.*)$/gm)].map((m) => ({ key: m[1], age: hours(m[2]), service: m[3], summary: m[4] }));
+			for (const t of tickets) {
+				const d = await diagnose(s, t.service, t.summary);
+				if (d.act) { await s.call(d.act[0], d.act[1]); continue; }
+				// at most three questions per ticket, none while one is open, at least eight hours apart: after that it is the developers' ticket
+				const asked = s.requests().filter((r) => r.task.includes(t.key + " "));
+				const last = asked.reduce((m, r) => Math.max(m, r.at), -Infinity);
+				if (t.age >= 2 && o.devs.length && asked.length < 3 && !asked.some((r) => r.open) && s.now() - last >= 8 * 3_600_000) {
+					const dev = o.devs[Number(t.key.slice(4)) % o.devs.length];
+					await s.call("ask_agent", { agent: dev, request: `Ticket ${t.key} on service ${t.service}: ${t.summary}. I could not find the cause from the logs. Please look at service ${t.service} and fix it if you can.` });
+				}
 			}
-		}
-	},
-};
+		},
+	};
+}
+export const rulesOps: Brain = opsBrain({ devs: ["dev-1"] });
 
 /** A developer who answers requests: looks at the service itself, fixes what the evidence supports, and says what it did. */
 export const rulesDev: Brain = {

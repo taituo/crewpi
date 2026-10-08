@@ -17,6 +17,10 @@ export type Session = {
 	inbox(): { id: string; from: string; task: string }[];
 	/** Requests this agent has made that are still unanswered. */
 	pending(): { id: string; to: string; task: string }[];
+	/** Every request ever made in the company, answered or not, with the virtual time it was made. */
+	requests(): { id: string; from: string; to: string; task: string; at: number; open: boolean }[];
+	/** Every unanswered request in the company (everybody sees the open requests, like the messages of a shared channel). */
+	openRequests(): { id: string; from: string; to: string; task: string }[];
 	/** Answers a request from the inbox. It becomes history when the shift ends. */
 	reply(id: string, result: string): void;
 };
@@ -51,12 +55,13 @@ export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; unt
 	const rep: RunAgentsReport = { shifts: 0, calls: 0, errors: 0, degraded: 0 };
 	// the handoffs in flight, kept up to date from the history (so a restart finds them again)
 	const open = new Map<string, { id: string; from: string; to: string; task: string }>();
+	const all = new Map<string, { id: string; from: string; to: string; task: string; at: number }>();
 	let cursor = 0;
 	const catchUp = () => {
 		for (const e of world.eventsSince(cursor)) {
 			cursor = e.seq;
 			const p = e.payload as any;
-			if (e.type === "handoff.requested") open.set(p.id, { id: p.id, from: p.from, to: p.to, task: p.task });
+			if (e.type === "handoff.requested") { open.set(p.id, { id: p.id, from: p.from, to: p.to, task: p.task }); all.set(p.id, { id: p.id, from: p.from, to: p.to, task: p.task, at: e.vtime }); }
 			else if (e.type === "handoff.completed") open.delete(p.id);
 		}
 	};
@@ -79,6 +84,8 @@ export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; unt
 		const session: Session = {
 			inbox: () => [...open.values()].filter((h) => h.to === agent.id && !replies.some((r) => r.id === h.id)).map((h) => ({ id: h.id, from: h.from, task: h.task })),
 			pending: () => [...open.values()].filter((h) => h.from === agent.id).map((h) => ({ id: h.id, to: h.to, task: h.task })),
+			openRequests: () => [...open.values()],
+			requests: () => [...all.values()].map((h) => ({ ...h, open: open.has(h.id) })),
 			reply: (id, result) => {
 				const h = open.get(id);
 				if (!h || h.to !== agent.id || replies.some((r) => r.id === id)) throw new Error(`reply: ${id} is not a request waiting in ${agent.id}'s inbox`);
