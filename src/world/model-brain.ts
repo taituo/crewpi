@@ -54,31 +54,37 @@ export function modelBrain(o: ModelBrainOptions): Brain {
 		name: `model:${o.model}`,
 		async shift(s: Session) {
 			const messages: any[] = [{ role: "system", content: SYSTEM[o.role] }, { role: "user", content: `Shift start, ${clock(s.now())}. Check the open tickets and handle what you can.` }];
-			for (let turn = 1; turn <= maxTurns; turn++) {
-				const res = await fetch(`${o.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-					method: "POST",
-					headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}`, "x-session-id": `${o.sessionPrefix ?? "crew-world"}:${s.agent}` },
-					body: JSON.stringify({ model: o.model, messages, tools }),
-					signal: AbortSignal.timeout(timeoutMs),
-				}).catch((e) => { throw new Error(`model request failed: ${(e as Error).name === "TimeoutError" ? `timed out after ${timeoutMs} ms` : (e as Error).message}`); });
-				if (!res.ok) throw new Error(`model request failed: HTTP ${res.status}`);
-				const msg = ((await res.json()) as any).choices?.[0]?.message;
-				if (!msg) throw new Error("model request failed: no message in the response");
-				messages.push({ role: "assistant", content: msg.content ?? null, ...(msg.tool_calls?.length ? { tool_calls: msg.tool_calls } : {}) });
-				if (!msg.tool_calls?.length) return { units: turn };
-				for (const c of msg.tool_calls) {
-					let out: string;
-					try {
-						const args = JSON.parse(c.function.arguments || "{}");
-						if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("not an object");
-						out = (await s.call(c.function.name, args)).text;
-					} catch (e) {
-						out = (e as Error).message === "not an object" || e instanceof SyntaxError ? "Error: the arguments must be a JSON object" : `Error: ${(e as Error).message}`;
+			let turn = 0;
+			try {
+				for (turn = 1; turn <= maxTurns; turn++) {
+					const res = await fetch(`${o.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+						method: "POST",
+						headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}`, "x-session-id": `${o.sessionPrefix ?? "crew-world"}:${s.agent}` },
+						body: JSON.stringify({ model: o.model, messages, tools }),
+						signal: AbortSignal.timeout(timeoutMs),
+					}).catch((e) => { throw new Error(`model request failed: ${(e as Error).name === "TimeoutError" ? `timed out after ${timeoutMs} ms` : (e as Error).message}`); });
+					if (!res.ok) throw new Error(`model request failed: HTTP ${res.status}`);
+					const msg = ((await res.json()) as any).choices?.[0]?.message;
+					if (!msg) throw new Error("model request failed: no message in the response");
+					messages.push({ role: "assistant", content: msg.content ?? null, ...(msg.tool_calls?.length ? { tool_calls: msg.tool_calls } : {}) });
+					if (!msg.tool_calls?.length) return { units: turn };
+					for (const c of msg.tool_calls) {
+						let out: string;
+						try {
+							const args = JSON.parse(c.function.arguments || "{}");
+							if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("not an object");
+							out = (await s.call(c.function.name, args)).text;
+						} catch (e) {
+							out = (e as Error).message === "not an object" || e instanceof SyntaxError ? "Error: the arguments must be a JSON object" : `Error: ${(e as Error).message}`;
+						}
+						messages.push({ role: "tool", tool_call_id: c.id, content: out });
 					}
-					messages.push({ role: "tool", tool_call_id: c.id, content: out });
 				}
+				throw new Error(`the model used more than ${maxTurns} turns without finishing`);
+			} catch (e) {
+				// a shift that fails has still spent its requests: say so, so a budget can see a stuck model
+				throw Object.assign(e as Error, { shift: { units: Math.min(turn, maxTurns) } });
 			}
-			throw new Error(`the model used more than ${maxTurns} turns without finishing`);
 		},
 	};
 }

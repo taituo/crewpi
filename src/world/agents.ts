@@ -137,10 +137,10 @@ export function recording(brain: Brain, tape: Tape): Brain {
 			const calls: Entry["calls"] = [];
 			const spy: Session = { ...s, call: async (tool, args) => { const r = await s.call(tool, args); calls.push({ tool, args, text: r.text, isError: r.isError }); return r; } };
 			let result: ShiftResult = undefined, error: string | undefined;
-			try { result = await brain.shift(spy); } catch (e) { error = (e as Error).message; }
+			try { result = await brain.shift(spy); } catch (e) { error = (e as Error).message; result = (e as { shift?: ShiftResult }).shift; }
 			// the replay must report the same brain as the recording did, or the histories would differ
 			tape.put({ agent: s.agent, at: s.now(), calls, result: { tier: brain.tier, brain: brain.name, ...(result ?? {}) }, ...(error ? { error } : {}) });
-			if (error) throw new Error(error);
+			if (error) throw Object.assign(new Error(error), { shift: result });
 			return result;
 		},
 	};

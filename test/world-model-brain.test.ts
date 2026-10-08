@@ -140,3 +140,27 @@ test("a real model run can be recorded and then replayed with zero requests to t
 	assert.equal(b.hash(), a.hash());
 	a.close(); b.close(); srv.close();
 });
+
+test("a shift that fails still costs what it spent: the turn cap and server errors carry their units, so a budget can see a stuck model", async () => {
+	const { budgeted } = await import("../src/world/agents.ts");
+	const { rulesOps } = await import("../src/world/brains.ts");
+	const loop = await fakeServer(() => ({ tool_calls: [toolCall("x", "jira_search", {})] }));
+	const w = open();
+	let err: any;
+	try { await modelBrain({ baseUrl: loop.url, apiKey: "k", model: "m", role: "ops", maxTurns: 4 }).shift(session(w)); } catch (e) { err = e; }
+	assert.equal(err?.shift?.units, 4, "four requests were spent before the cap");
+	loop.close();
+	const bad = await fakeServer((r, turn) => (turn === 0 ? { tool_calls: [toolCall("y", "jira_search", {})] } : { status: 502 }));
+	let err2: any;
+	try { await modelBrain({ baseUrl: bad.url, apiKey: "k", model: "m", role: "ops" }).shift(session(w)); } catch (e) { err2 = e; }
+	assert.equal(err2?.shift?.units, 2, "one good request and one failed request were made");
+	bad.close();
+	// and a budget therefore degrades a model that keeps getting stuck (it used to be charged nothing for failing)
+	const stuck = await fakeServer(() => ({ tool_calls: [toolCall("z", "jira_search", {})] }));
+	const w2 = open("stuck");
+	const brain = budgeted(modelBrain({ baseUrl: stuck.url, apiKey: "k", model: "m", role: "ops", maxTurns: 3 }), rulesOps, { unitsPerDay: 9 });
+	const rep = await runAgents(w2, { agents: [{ id: "ops-1", brain, everyMs: HOUR }], untilDay: 1 });
+	assert.ok(rep.degraded > 15, `after 3 failed shifts (9 units) the rest of the day runs on the fallback (${rep.degraded} degraded)`);
+	assert.ok(stuck.seen.length <= 9 + 3, `the stuck model was asked ${stuck.seen.length} times, not once per shift`);
+	stuck.close(); w.close(); w2.close();
+});
