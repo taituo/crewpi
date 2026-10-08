@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.ts";
+import { migrate } from "./migrate.ts";
+import { MIGRATIONS } from "./migrations.ts";
 
 export type Message = {
 	id: number;
@@ -13,6 +15,12 @@ export type Message = {
 	meta: Record<string, unknown>;
 	createdAt: number;
 	updatedAt: number;
+	tenantId: string;
+	organizationId: string;
+	/** Server-resolved actor (human sub, agent id, "system"); null on rows from before provenance existed. */
+	actorId: string | null;
+	actorType: "human" | "internal_agent" | "system" | null;
+	source: "live" | "demo" | "synthetic";
 };
 
 export type Approval = {
@@ -24,6 +32,9 @@ export type Approval = {
 	detail: Record<string, unknown>;
 	status: "pending" | "approved" | "rejected";
 	decidedBy: string | null;
+	/** Stable subject of the decider; decidedBy is only the display name at the time. */
+	decidedBySub: string | null;
+	requestedBySub: string | null;
 	note: string | null;
 	createdAt: number;
 	decidedAt: number | null;
@@ -31,53 +42,8 @@ export type Approval = {
 
 mkdirSync(config.dataDir, { recursive: true });
 export const db = new DatabaseSync(join(config.dataDir, "workspace.sqlite"));
-db.exec(`
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  channel_id TEXT NOT NULL,
-  author_kind TEXT NOT NULL,
-  author_id TEXT NOT NULL,
-  author_name TEXT NOT NULL,
-  text TEXT NOT NULL DEFAULT '',
-  meta TEXT NOT NULL DEFAULT '{}',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS messages_channel ON messages(channel_id, id);
-CREATE TABLE IF NOT EXISTS convs (
-  channel_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
-  current_message INTEGER,
-  PRIMARY KEY (channel_id, agent_id)
-);
-CREATE TABLE IF NOT EXISTS approvals (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  channel_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  task_id TEXT NOT NULL UNIQUE,
-  title TEXT NOT NULL,
-  detail TEXT NOT NULL DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT 'pending',
-  decided_by TEXT,
-  note TEXT,
-  created_at INTEGER NOT NULL,
-  decided_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS attachments (
-  id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL,
-  owner TEXT NOT NULL, created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  at INTEGER NOT NULL,
-  actor TEXT NOT NULL,
-  action TEXT NOT NULL,
-  detail TEXT NOT NULL DEFAULT '{}'
-);
-`);
+db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
+migrate(db, MIGRATIONS);
 
 const rowToMessage = (r: any): Message => ({
 	id: r.id,
@@ -89,6 +55,11 @@ const rowToMessage = (r: any): Message => ({
 	meta: JSON.parse(r.meta),
 	createdAt: r.created_at,
 	updatedAt: r.updated_at,
+	tenantId: r.tenant_id,
+	organizationId: r.organization_id,
+	actorId: r.actor_id ?? null,
+	actorType: r.actor_type ?? null,
+	source: r.source,
 });
 
 const rowToApproval = (r: any): Approval => ({
@@ -100,19 +71,23 @@ const rowToApproval = (r: any): Approval => ({
 	detail: JSON.parse(r.detail),
 	status: r.status,
 	decidedBy: r.decided_by,
+	decidedBySub: r.decided_by_sub ?? null,
+	requestedBySub: r.requested_by_sub ?? null,
 	note: r.note,
 	createdAt: r.created_at,
 	decidedAt: r.decided_at,
 });
 
+const ACTOR_TYPE = { human: "human", agent: "internal_agent", system: "system" } as const;
+
 export const store = {
-	addMessage(m: Omit<Message, "id" | "createdAt" | "updatedAt" | "meta"> & { meta?: Record<string, unknown> }): Message {
+	addMessage(m: Omit<Message, "id" | "createdAt" | "updatedAt" | "meta" | "tenantId" | "organizationId" | "actorId" | "actorType" | "source"> & { meta?: Record<string, unknown> }): Message {
 		const now = Date.now();
 		const r = db
 			.prepare(
-				"INSERT INTO messages (channel_id, author_kind, author_id, author_name, text, meta, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+				"INSERT INTO messages (channel_id, author_kind, author_id, author_name, text, meta, created_at, updated_at, actor_id, actor_type) VALUES (?,?,?,?,?,?,?,?,?,?)",
 			)
-			.run(m.channelId, m.authorKind, m.authorId, m.authorName, m.text, JSON.stringify(m.meta ?? {}), now, now);
+			.run(m.channelId, m.authorKind, m.authorId, m.authorName, m.text, JSON.stringify(m.meta ?? {}), now, now, m.authorId, ACTOR_TYPE[m.authorKind]);
 		return this.getMessage(Number(r.lastInsertRowid))!;
 	},
 	updateMessage(id: number, patch: { text?: string; meta?: Record<string, unknown> }): Message | undefined {
@@ -163,15 +138,15 @@ export const store = {
 	},
 
 	/** Idempotent per tool task so a replayed tool finds the approval it already opened. */
-	openApproval(a: { channelId: string; agentId: string; taskId: string; title: string; detail: Record<string, unknown> }): {
+	openApproval(a: { channelId: string; agentId: string; taskId: string; title: string; detail: Record<string, unknown>; requestedBySub?: string }): {
 		approval: Approval;
 		created: boolean;
 	} {
 		const existing = db.prepare("SELECT * FROM approvals WHERE task_id = ?").get(a.taskId);
 		if (existing) return { approval: rowToApproval(existing), created: false };
 		const r = db
-			.prepare("INSERT INTO approvals (channel_id, agent_id, task_id, title, detail, created_at) VALUES (?,?,?,?,?,?)")
-			.run(a.channelId, a.agentId, a.taskId, a.title, JSON.stringify(a.detail), Date.now());
+			.prepare("INSERT INTO approvals (channel_id, agent_id, task_id, title, detail, created_at, requested_by_sub) VALUES (?,?,?,?,?,?,?)")
+			.run(a.channelId, a.agentId, a.taskId, a.title, JSON.stringify(a.detail), Date.now(), a.requestedBySub ?? null);
 		return { approval: this.getApproval(Number(r.lastInsertRowid))!, created: true };
 	},
 	getApproval(id: number): Approval | undefined {
@@ -190,10 +165,10 @@ export const store = {
 		db.prepare("UPDATE approvals SET detail = ? WHERE id = ?").run(JSON.stringify({ ...cur.detail, ...patch }), id);
 	},
 	/** Returns undefined if already decided (first decision wins). */
-	decideApproval(id: number, decision: "approved" | "rejected", by: string, note: string | null): Approval | undefined {
+	decideApproval(id: number, decision: "approved" | "rejected", by: string, note: string | null, bySub?: string): Approval | undefined {
 		const r = db
-			.prepare("UPDATE approvals SET status = ?, decided_by = ?, note = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
-			.run(decision, by, note, Date.now(), id);
+			.prepare("UPDATE approvals SET status = ?, decided_by = ?, decided_by_sub = ?, note = ?, decided_at = ? WHERE id = ? AND status = 'pending'")
+			.run(decision, by, bySub ?? null, note, Date.now(), id);
 		if (Number(r.changes) === 0) return undefined;
 		return this.getApproval(id);
 	},
@@ -206,14 +181,15 @@ export const store = {
 		if (!r || (channelId && r.channel_id !== channelId)) return undefined;
 		return { id: r.id, channelId: r.channel_id, name: r.name, mime: r.mime, size: r.size, owner: r.owner };
 	},
-	audit(actor: string, action: string, detail: Record<string, unknown> = {}) {
-		db.prepare("INSERT INTO audit (at, actor, action, detail) VALUES (?,?,?,?)").run(Date.now(), actor, action, JSON.stringify(detail));
+	audit(actor: string, action: string, detail: Record<string, unknown> = {}, actorId?: string) {
+		db.prepare("INSERT INTO audit (at, actor, action, detail, actor_id) VALUES (?,?,?,?,?)").run(Date.now(), actor, action, JSON.stringify(detail), actorId ?? null);
 	},
 	listAudit(limit = 100) {
 		return (db.prepare("SELECT * FROM audit ORDER BY id DESC LIMIT ?").all(limit) as any[]).map((r) => ({
 			id: r.id,
 			at: r.at,
 			actor: r.actor,
+			actorId: r.actor_id ?? null,
 			action: r.action,
 			detail: JSON.parse(r.detail),
 		}));

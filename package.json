@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.ts",
-    "test": "node --test test/*.test.ts"
+    "test": "node scripts/preflight.mjs && node --test test/*.test.ts"
   },
   "dependencies": {
     "@earendil-works/chord": "1.0.4",

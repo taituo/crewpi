@@ -47,7 +47,9 @@ One `Entity` (the demo org) + one mock Teams representative + **200 synthetic or
 
 For each: files that will change, risks (IDs from `risk-register.md`), migrations, acceptance, tests. "New" = new file/module.
 
-### P0a Foundations
+### P0a Foundations - DONE on branch `feat/p0a-foundations`
+**Result:** `src/migrate.ts` (runner), `src/migrations.ts` (1 baseline, 2 tenant/org/provenance), approvals store `decided_by_sub`, messages get `actor_id/actor_type/source`, audit gets `actor_id`, server refuses the default `SESSION_SECRET` in OIDC mode, `npm test` preflights Node >= 22.19. 42/42 tests pass (35 existing + 7 new in `test/migrate.test.ts`); verified against a database written by the audited commit `873a01a`.
+**Not done / deferred:** `requested_by_sub` is stored but not yet filled (the requesting human is not tracked until Prompt 05); separation of duties is therefore not enforced yet; no hash-chained audit; other modules (`channels`, `memory`, `optchat`, `sandbox`, `settings`) still create their own tables with `IF NOT EXISTS` and move into migrations as each is touched.
 - **Files:** new `src/migrate.ts`, `migrations/0001_baseline.sql`, `0002_tenant_org.sql`; edit `src/db.ts` (use runner), `src/server.ts` (decide route stores `sub`), `src/auth.ts` (refuse default `SESSION_SECRET` when `AUTH_MODE=oidc`).
 - **Migrations:** baseline; default tenant/org; `approvals.requested_by_sub`, `decided_by_sub`; `messages` provenance columns (nullable); `audit.actor_id`.
 - **Risks:** R-02, R-06, R-12, R-13.

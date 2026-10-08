@@ -7,13 +7,15 @@ const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v
 const list = (v: string | undefined, d: string[]) =>
 	v === undefined ? d : v.split(",").map((s) => s.trim()).filter(Boolean);
 
+export const DEFAULT_SESSION_SECRET = "dev-only-secret-change-me";
+
 export const config = {
 	port: num(env.PORT, 8080),
 	dataDir: env.DATA_DIR ?? "./data",
 	/** Public base URL the browser uses, no trailing slash. */
 	publicUrl: (env.PUBLIC_URL ?? "http://localhost:8080").replace(/\/$/, ""),
 	cookieSecure: env.COOKIE_SECURE === "true",
-	sessionSecret: env.SESSION_SECRET ?? "dev-only-secret-change-me",
+	sessionSecret: env.SESSION_SECRET ?? DEFAULT_SESSION_SECRET,
 
 	brand: {
 		name: env.BRAND_NAME ?? "Crew",
@@ -82,3 +84,10 @@ export const config = {
 };
 
 export type Config = typeof config;
+
+/** Called at server start (not at import, so tests can load config in any mode). */
+export function assertSafeConfig() {
+	if (config.auth.mode === "oidc" && config.sessionSecret === DEFAULT_SESSION_SECRET) {
+		throw new Error("SESSION_SECRET must be set when AUTH_MODE=oidc (the built-in default is public). Generate one with: openssl rand -base64 32");
+	}
+}

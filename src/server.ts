@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AGENTS, agentById } from "./agents.ts";
 import { agentsInChannel, canSeeChannel, channelById, createDm, listChannels, parseMentions } from "./channels.ts";
 import { callback, login, logout, permsOf, userFrom, type User } from "./auth.ts";
-import { config } from "./config.ts";
+import { assertSafeConfig, config } from "./config.ts";
 import { store } from "./db.ts";
 import { approvalBus, hub } from "./hub.ts";
 import { initRepo } from "./repo.ts";
@@ -70,6 +70,8 @@ async function readRaw(req: IncomingMessage, max: number): Promise<Buffer> {
 	if (size > max) throw Object.assign(new Error(`file too large (max ${Math.round(max / 1048576)} MB)`), { status: 413 });
 	return Buffer.concat(chunks);
 }
+
+const auditAs = (user: User, action: string, detail: Record<string, unknown> = {}) => store.audit(`user:${user.name}`, action, detail, user.sub);
 
 const err = (status: number, message: string) => Object.assign(new Error(message), { status });
 
@@ -188,7 +190,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		if (!perms.operate) throw err(403, "operators only");
 		if (!canSeeChannel(user.sub, mm[1])) throw err(404, "no such channel");
 		await stopAgent(mm[1], mm[2]);
-		store.audit(`user:${user.name}`, "agent.stop", { channel: mm[1], agent: mm[2] });
+		auditAs(user, "agent.stop", { channel: mm[1], agent: mm[2] });
 		return json(res, 200, { ok: true });
 	}
 
@@ -201,7 +203,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		if (!perms.operate) throw err(403, "operators only");
 		if (!canSeeChannel(user.sub, mm[1]) || !channelById(mm[1])?.agents.includes(mm[2])) throw err(404, "no such channel or agent");
 		const r = await compactAgent(mm[1], mm[2]);
-		store.audit(`user:${user.name}`, "memory.compact", { channel: mm[1], agent: mm[2], ...r });
+		auditAs(user, "memory.compact", { channel: mm[1], agent: mm[2], ...r });
 		return json(res, 200, r);
 	}
 
@@ -217,7 +219,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		const note = body.note ? String(body.note).slice(0, 300) : null;
 		const target = store.getApproval(Number(mm[1]));
 		if (!target || !canSeeChannel(user.sub, target.channelId)) throw err(404, "approval not found");
-		const a = store.decideApproval(Number(mm[1]), decision, user.name, note);
+		const a = store.decideApproval(Number(mm[1]), decision, user.name, note, user.sub);
 		if (!a) throw err(409, "already decided or not found");
 		const mid = a.detail.messageId as number | undefined;
 		if (mid) {
@@ -225,7 +227,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 			const updated = cur && store.updateMessage(mid, { meta: { ...cur.meta, status: a.status, decidedBy: a.decidedBy, note: a.note } });
 			if (updated) hub.publish({ type: "message", message: updated });
 		}
-		store.audit(`user:${user.name}`, `approval.${decision}`, { approvalId: a.id, title: a.title });
+		auditAs(user, `approval.${decision}`, { approvalId: a.id, title: a.title });
 		try {
 			saveNote({ agentId: a.agentId, channelId: a.channelId, text: `${a.status === "approved" ? "Approved" : "Rejected"} by ${user.name}${note ? ` ("${note}")` : ""}: ${a.title}`, source: "system" });
 		} catch { /* a note is a convenience, never a reason to fail the decision */ }
@@ -287,7 +289,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		if (!canSeeChannel(user.sub, mm[1])) throw err(404, "no such channel");
 		const ch = setChannelStatus(mm[1], mm[2] === "archive" ? "archived" : "open");
 		if (!ch) throw err(400, "only case channels can be archived");
-		store.audit(`user:${user.name}`, `channel.${mm[2]}`, { channel: ch.id });
+		auditAs(user, `channel.${mm[2]}`, { channel: ch.id });
 		if (mm[2] === "archive") {
 			void stopSandbox(ch.id).catch(() => undefined);
 			for (const agentId of ch.agents) {
@@ -301,7 +303,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		if (!perms.admin) throw err(403, "admins only");
 		const body = await readBody(req);
 		try { setAnomaly(String(body.metric ?? "orders_queue_depth"), body.active !== false); } catch (e: any) { throw err(400, e.message); }
-		store.audit(`user:${user.name}`, "demo.anomaly", { metric: body.metric ?? "orders_queue_depth", active: body.active !== false });
+		auditAs(user, "demo.anomaly", { metric: body.metric ?? "orders_queue_depth", active: body.active !== false });
 		return json(res, 200, { ok: true });
 	}
 
@@ -317,7 +319,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		if (!ch || ch.kind !== "issue" || ch.status !== "open") throw err(400, "start it from an open case channel");
 		try {
 			const r = await startIncident({ channelId: ch.id, ticket: ch.ticket, brief: `${ch.ticket ?? ch.name}: ${ch.topic}`, lead: body.lead ? String(body.lead) : undefined, monitorSeconds: 45 });
-			store.audit(`user:${user.name}`, "workflow.start", { channel: ch.id, ...r });
+			auditAs(user, "workflow.start", { channel: ch.id, ...r });
 			return json(res, 200, r);
 		} catch (e: any) { throw err(503, e.message); }
 	}
@@ -330,7 +332,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		const channelId = mm[1].replace(/^incident-/, "");
 		if (!canSeeChannel(user.sub, channelId)) throw err(404, "no such workflow");
 		await signalDecision(mm[1], { decision, by: user.name, note: body.note ? String(body.note).slice(0, 300) : undefined }).catch((e) => { throw err(409, e.message); });
-		store.audit(`user:${user.name}`, "workflow.decision", { workflow: mm[1], decision });
+		auditAs(user, "workflow.decision", { workflow: mm[1], decision });
 		return json(res, 200, { ok: true });
 	}
 
@@ -339,7 +341,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 	if (m === "POST" && (mm = /^\/api\/sandboxes\/([\w-]+)\/stop$/.exec(path))) {
 		if (!perms.operate || !canSeeChannel(user.sub, mm[1])) throw err(403, "operators only");
 		const stopped = await stopSandbox(mm[1]);
-		store.audit(`user:${user.name}`, "sandbox.stop", { channel: mm[1] });
+		auditAs(user, "sandbox.stop", { channel: mm[1] });
 		return json(res, 200, { stopped });
 	}
 
@@ -349,7 +351,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 
 	if (m === "POST" && (mm = /^\/api\/memory\/(\d+)\/delete$/.exec(path))) {
 		if (!deleteNote(Number(mm[1]), user.sub, perms.admin)) throw err(404, "no such note, or not yours to delete");
-		store.audit(`user:${user.name}`, "memory.delete", { id: Number(mm[1]) });
+		auditAs(user, "memory.delete", { id: Number(mm[1]) });
 		return json(res, 200, { ok: true });
 	}
 
@@ -401,6 +403,7 @@ async function seedChannels() {
 	}
 }
 
+assertSafeConfig();
 await initRepo();
 await seedChannels();
 await startRuntime();
