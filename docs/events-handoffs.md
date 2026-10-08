@@ -37,6 +37,7 @@ Delivery is at-least-once to each destination; consumers are idempotent through 
 | Who started the chain | `conv_origin` table, `setOrigin/getOrigin` | replaces the in-memory depth map; approvals get `requested_by_sub` |
 | Separation of duties | `server.ts` decide route, `SEPARATION_OF_DUTIES` (default on) | the starter of a chain cannot approve what it asks for |
 | Agent tools | `case_add_fact`, `case_context`; `ask_agent` unchanged for the model | |
+| Result return | `return` consumer in `src/work/consumers.ts` | when a handoff completes, is declined or fails, the requester agent is woken with `[handoff result] ...` (the recipient's answer text, or the reason), quietly and once. Added after the live QA found that a requester never learned the answer |
 | API | `GET /api/channels/:id/case`, `GET /api/handoffs`, `POST /api/handoffs/:id/cancel`, `GET /api/domain-events` | all filtered by channel visibility |
 | CLI | `crew handoffs`, `crew case <channel>`, `crew events` | E1 |
 | UI | "Work" panel in the right column | who waits for whom, acknowledged or not, conflicts, orphans, facts, decisions |
@@ -54,3 +55,7 @@ Delivery is at-least-once to each destination; consumers are idempotent through 
 - `events` is not yet the SSE spine; the browser still polls messages. `change_feed` (parked branch) would be replaced by `events.sequence`.
 - Handoffs are agent-to-agent; person-to-person handoffs and a UI action to reject/decline as an agent are not built (the service supports `reject`).
 - **Only agent-to-agent handoffs use the outbox.** A person's message to an agent still goes `POST /messages -> submitToAgent` in-line, so finding F-11 (a crash between storing the message and dispatching it) is **not yet fixed for that path**. Moving it behind the same outbox (a `message.posted` event with a dispatch consumer) is the next small step.
+
+## Added after live QA (2026-10-08): the requester must hear the answer
+An opencode QA agent (Muse Spark) drove the deployed system as a user and found that `ask_agent` delegations never reported back: Ops said "I'll report it here once it arrives", Developer answered in the channel, the handoff became `completed`, and Ops was never woken. The scripted demo hid this because its agents call `ask_agent` back themselves; real models just reply in the channel. Fix: the `return` consumer (above). Status `completed` still only means "the recipient finished a run"; delivering the answer is a separate step with its own idempotency key (`result:<handoffId>`).
+Not done: the delivered text is the recipient's final chat message, not a structured result; there is no limit on how often a requester can be woken by results (the depth and rate limits of new handoffs still apply); a result delivered while the requester is mid-run is queued by Pi, not merged.

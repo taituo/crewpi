@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "crew-consumers-"));
 process.env.SESSION_SECRET = "test-secret";
+process.env.MAX_DELEGATIONS = "50"; // these tests make many handoffs in one channel; the rate limit has its own test (handoffs.test.ts)
 
 await import("../src/channels.ts"); // creates the standing channels
 const { db, store } = await import("../src/db.ts");
@@ -107,4 +108,55 @@ test("routing reads the organization graph: backups from substitutes_for, rooms 
 	assert.equal(backupFor(d, "developer", "default2"), null, "a substitute is not itself covered");
 	assert.deepEqual(informTargets(d, "ops", "default2"), ["production"]);
 	assert.deepEqual(informTargets(d, "developer", "default2"), []);
+});
+
+// ---- a finished handoff is delivered to whoever asked for it --------------------------------------------------
+
+test("the answer to a handoff reaches the agent who asked, once, quietly", async () => {
+	sent.length = 0;
+	const { handoff } = handoffs.request(base(30, { text: "list the files of the repo", from: "ops", to: "developer" }));
+	await bus.drain();
+	// the developer answers in the channel (this is the row the runtime links as resultRef)
+	const answer = store.addMessage({ channelId: "incidents", authorKind: "agent", authorId: "developer", authorName: "Developer", text: "Files: README.md, demo-apps/checkout-config.json, validate.mjs", meta: { kind: "agent", status: "done" } });
+	handoffs.complete(handoff.handoffId, "agent:developer", `message:${answer.id}`);
+	await bus.drain();
+	const back = sent.filter((s) => s.requestId === `result:${handoff.handoffId}`);
+	assert.equal(back.length, 1, "exactly one result delivery");
+	assert.equal(back[0].agentId, "ops", "to the requester");
+	assert.equal(back[0].channelId, "incidents");
+	assert.match(back[0].text, /@developer/);
+	assert.match(back[0].text, /list the files of the repo/, "it says which request this answers");
+	assert.match(back[0].text, /README\.md, demo-apps\/checkout-config\.json, validate\.mjs/, "and carries the answer itself");
+	assert.equal(back[0].card, false, "no second delegation card in the channel");
+	// redelivery of the event (a crash before the outbox row was marked): the inbox keeps it at one
+	db.prepare("UPDATE outbox SET status = 'pending', next_attempt_at = 0 WHERE destination = 'return'").run();
+	await bus.drain();
+	assert.equal(sent.filter((s) => s.requestId === `result:${handoff.handoffId}`).length, 1);
+});
+
+test("a refusal or a failure is delivered too, and the requester is told which", async () => {
+	sent.length = 0;
+	const a = handoffs.request(base(31, { text: "deploy to the moon", to: "reviewer" })).handoff;
+	await bus.drain();
+	handoffs.reject(a.handoffId, "reviewer", "not my area");
+	const b = handoffs.request(base(32, { text: "check the pool size please", to: "developer" })).handoff;
+	await bus.drain();
+	handoffs.accept(b.handoffId, "runtime");
+	handoffs.fail(b.handoffId, "agent:developer", "model error");
+	await bus.drain();
+	const rej = sent.find((s) => s.requestId === `result:${a.handoffId}`), fl = sent.find((s) => s.requestId === `result:${b.handoffId}`);
+	assert.match(rej!.text, /declined.*not my area/i);
+	assert.match(fl!.text, /failed.*model error/i);
+});
+
+test("nothing is delivered when the requester is not an agent, and never in a private chat", async () => {
+	sent.length = 0;
+	const w = handoffs.request(base(33, { from: "workflow", text: "workflow asked this", to: "developer" })).handoff;
+	await bus.drain();
+	handoffs.accept(w.handoffId, "runtime"); handoffs.complete(w.handoffId, "runtime", undefined);
+	const p = handoffs.request(base(34, { channelId: "dm-test", text: "private errand", to: "developer" })).handoff;
+	await bus.drain();
+	handoffs.accept(p.handoffId, "runtime"); handoffs.complete(p.handoffId, "runtime", undefined);
+	await bus.drain();
+	assert.equal(sent.filter((s) => s.requestId?.startsWith("result:")).length, 0);
 });

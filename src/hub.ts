@@ -57,6 +57,8 @@ export const bridge: {
 		text: string;
 		from: { kind: "human" | "agent"; id: string; name: string };
 		requestId?: string;
+		/** Post a delegation card in the channel for this message (default true). Result deliveries are quiet. */
+		card?: boolean;
 		/** Hops since the human message / alert that started this chain (0 = started by a human or the watcher). */
 		depth?: number;
 	}) => Promise<unknown>;
