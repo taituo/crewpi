@@ -25,7 +25,7 @@ Status: **proposal** (Prompt 00). Likelihood/impact: L/M/H. "Finding" refers to 
 | R-19 | Cost run-away with large-scale delegation (many agents/items) | - | M | H | Per-pool and per-item budgets in policy; backpressure; existing OpenRouter soft cap is per key only | Budget metrics; kill switch |
 | R-20 | Human alert fatigue: exception centre becomes the new inbox | - | M | M | Dedup, ranking, "why raised", measured human attention (14) | Exceptions/day per human metric |
 | R-21 | Control state kept in process memory (rate limits, depth, tree queue) behaves wrongly after restart or with >1 process | F-8 | H | M | Persist counters; key depth by causal chain (`causationId`) | Restart test |
-| R-22 | SSE clients miss events after reconnect → stale approval buttons, hidden exceptions | F-13 | H | M | Event sequence ids + `Last-Event-ID` resume (05/01) | Reconnect test |
+| R-22 | SSE clients miss events after reconnect → stale approval buttons, hidden exceptions (lower for the current browser UI, which reloads and polls; real for future clients) | F-13 | M | M | Event sequence ids + `Last-Event-ID` resume (05/01) | Reconnect test |
 | R-23 | Session role staleness: a revoked approver stays approver for ≤ 8 h | F-15 | M | M | Shorter TTL for privileged actions; server-side revocation list or re-check via token introspection for approvals | Revocation test |
 | R-24 | Dev toolchain mismatch (Node 18 vs ≥ 22.19) yields misleading test failures | audit | H | L | Preflight check in `npm test`; `.nvmrc` | CI |
 | R-25 | Over-claiming: documents or UI state that unbuilt features exist | plan C | M | M | `Truthful product state` rule; release gate checklist (plan E) | Review checklist |

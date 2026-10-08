@@ -19,7 +19,7 @@ import { ALL_EXTENSIONS } from "./tools.ts";
 const ctx = BACKGROUND_CONTEXT;
 
 type ModelRef = { provider: string; modelId: string };
-export type Presence = { agentId: string; status: "idle" | "working" | "waiting_approval"; model: string; working: string[] };
+export type Presence = { agentId: string; status: "idle" | "working" | "waiting_approval"; model: string; working: string[]; /** What is on the agent's desk right now. */ backlog: { running: number; approvals: number } };
 
 let harness: Harness;
 const models = createModels();
@@ -447,6 +447,7 @@ export async function stopAgent(channelId: string, agentId: string) {
 // ------------------------------------------------------------------ presence
 
 export function presence(): Presence[] {
+	const pending = store.listApprovals("pending").filter((a) => channelById(a.channelId)?.kind !== "dm");
 	const waiting = new Set(store.listApprovals("pending").map((a) => a.agentId));
 	return AGENTS.map((a) => {
 		// Private chats are left out so presence never reveals who is talking to an agent.
@@ -457,6 +458,7 @@ export function presence(): Presence[] {
 			status: waiting.has(a.id) ? "waiting_approval" : working.length ? "working" : "idle",
 			model: `${ref.provider}/${ref.modelId}`,
 			working,
+			backlog: { running: working.length, approvals: pending.filter((p) => p.agentId === a.id).length },
 		};
 	});
 }

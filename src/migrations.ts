@@ -58,4 +58,19 @@ CREATE TABLE IF NOT EXISTS organizations (
 			db.exec("CREATE INDEX IF NOT EXISTS messages_org ON messages(tenant_id, organization_id, channel_id, id)");
 		},
 	},
+	{
+		version: 3,
+		name: "change-feed-and-attention",
+		up: (db) => {
+			// A change feed, not the future domain event log: one row per changed entity (the latest change), so the
+			// streaming message updates of an agent do not bloat it. It gives SSE a resumable sequence number.
+			db.exec(`
+CREATE TABLE IF NOT EXISTS change_feed (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, ref_id INTEGER NOT NULL, channel_id TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS change_feed_ref ON change_feed(kind, ref_id);
+CREATE TABLE IF NOT EXISTS change_feed_state (id INTEGER PRIMARY KEY CHECK (id = 1), pruned_upto INTEGER NOT NULL);
+INSERT OR IGNORE INTO change_feed_state (id, pruned_upto) VALUES (1, 0);`);
+			addColumn(db, "approvals", "attention_cost", "INTEGER NOT NULL DEFAULT 5");
+		},
+	},
 ];

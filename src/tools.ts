@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { CompactionTask, defineExtension, defineTool, hook, section } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import { agentById } from "./agents.ts";
+import { ATTENTION_COST } from "./attention.ts";
 import { agentsInChannel, channelById } from "./channels.ts";
 import { isTicketKey, markCheckoutFixed, openCase } from "./cases.ts";
 import { config } from "./config.ts";
@@ -34,10 +35,10 @@ function where(conversationId: unknown) {
 async function gate(
 	api: { taskId: unknown; conversationId: unknown },
 	context: Context,
-	req: { title: string; detail: Record<string, unknown> },
+	req: { title: string; detail: Record<string, unknown>; attentionCost?: number },
 ): Promise<{ approved: boolean; by: string | null; note: string | null }> {
 	const { channelId, agentId } = where(api.conversationId);
-	const { approval, created } = store.openApproval({ channelId, agentId, taskId: String(api.taskId), title: req.title, detail: req.detail });
+	const { approval, created } = store.openApproval({ channelId, agentId, taskId: String(api.taskId), title: req.title, detail: req.detail, attentionCost: req.attentionCost });
 	if (created) {
 		const agent = agentById(agentId)!;
 		const msg = store.addMessage({
@@ -406,6 +407,7 @@ const applyFromRepo = defineTool({
 			const v = await gate(api, context, {
 				title: `Apply ${namespace}/${name} from ${args.ref}${args.restart ? ` and restart ${args.restart}` : ""}`,
 				detail: { action: "apply configmap", target: `${namespace}/${name}`, ref: args.ref, path: args.path, restart: args.restart ?? null, reason: args.reason, changes },
+				attentionCost: ATTENTION_COST.liveChange,
 			});
 			if (!v.approved) return text(verdict(v));
 			// JSON merge patch: idempotent, so a replay after a crash is safe.

@@ -320,6 +320,7 @@ function App() {
 	const [channels, setChannels] = useState([]);
 	const [notes, setNotes] = useState([]);
 	const [budget, setBudget] = useState(null);
+	const [attention, setAttention] = useState(null);
 	const [sandboxes, setSandboxes] = useState([]);
 	const [wf, setWf] = useState({ available: false, workflows: [] });
 	const [newCase, setNewCase] = useState(null);
@@ -343,6 +344,7 @@ function App() {
 			setIntegrations(d.integrations);
 			setChannels(d.channels);
 			setBudget(d.inference.budget || null);
+			setAttention(d.attention || null);
 			document.title = d.brand.name;
 			document.documentElement.style.setProperty("--accent", d.brand.accent);
 			loadApprovals();
@@ -371,6 +373,8 @@ function App() {
 		es.addEventListener("channels", (e) => setChannels(JSON.parse(e.data).channels));
 		es.addEventListener("integrations", (e) => setIntegrations(JSON.parse(e.data).integrations));
 		es.addEventListener("hello", () => { loadMessages(channelRef.current); loadApprovals(); });
+		// The server could not resume from our Last-Event-ID (too far behind): fall back to a full reload.
+		es.addEventListener("reset", () => { loadMessages(channelRef.current); loadApprovals(); });
 		return () => es.close();
 	}, []);
 
@@ -390,7 +394,7 @@ function App() {
 	}, []);
 
 	useEffect(() => {
-		const load = () => { if (document.hidden) return; api("/api/budget").then((d) => setBudget(d.budget)).catch(() => {}); api("/api/sandboxes").then((d) => setSandboxes(d.sandboxes)).catch(() => {}); };
+		const load = () => { if (document.hidden) return; api("/api/budget").then((d) => setBudget(d.budget)).catch(() => {}); api("/api/attention").then((d) => setAttention(d.attention)).catch(() => {}); api("/api/sandboxes").then((d) => setSandboxes(d.sandboxes)).catch(() => {}); };
 		load();
 		const t = setInterval(load, 20000);
 		return () => clearInterval(t);
@@ -473,6 +477,7 @@ function App() {
 			<div class="brand">
 				<div class="logo"><div class="mark">◆</div>${me.brand.name}</div>
 				<div class="ws">${me.brand.workspace}</div>
+				${attention && html`<div class=${"attn" + (attention.over ? " over" : "")} title="Attention you spent on decisions in the last 24 h, plus what is waiting for you. Soft daily budget.">Attention ${attention.spent24h} + ${attention.queued} waiting / ${attention.budget}</div>`}
 			</div>
 			<div class="side-scroll">
 			<div class="section"><h4>Channels</h4>
@@ -492,7 +497,7 @@ function App() {
 				${open.filter((c) => c.kind === "dm").length === 0 && html`<div class="empty" style="padding:2px 10px">Click an agent below to chat privately.</div>`}
 			</div>
 			<div class="section"><h4>Agents</h4>
-				${me.agents.map((a) => html`<button class="item" title=${"Private chat with " + a.name + " — " + a.title} onClick=${() => me.perms.operate && openDm(a.id)}><span class=${"dot " + (presence[a.id]?.status || "idle")}></span>${a.name}<span class="sub">${{ idle: "idle", working: "working", waiting_approval: "needs approval" }[presence[a.id]?.status || "idle"]}</span></button>`)}
+				${me.agents.map((a) => html`<button class="item" title=${"Private chat with " + a.name + " — " + a.title} onClick=${() => me.perms.operate && openDm(a.id)}><span class=${"dot " + (presence[a.id]?.status || "idle")}></span>${a.name}<span class="sub">${{ idle: "idle", working: "working", waiting_approval: "needs approval" }[presence[a.id]?.status || "idle"]}${presence[a.id]?.backlog?.approvals ? ` · ${presence[a.id].backlog.approvals} waiting` : ""}</span></button>`)}
 			</div>
 			</div>
 			<div class="me">

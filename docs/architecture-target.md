@@ -57,7 +57,7 @@ Numbered `F-n`; referenced by the risk register and ADRs.
 | F-10 | **Fixture data and real data share paths.** `closeCase` mutates the fake Jira issue; `markCheckoutFixed` is called from the real apply tool; the watcher opens fake tickets. No `source: demo|live` marker on tickets/events. | `activities.ts`, `tools.ts` L424, `watch.ts` |
 | F-11 | **No outbox/inbox.** Side effects (post message → publish SSE → submit to agent) happen in-line; a crash between steps can drop an agent dispatch for a human message (message stored, `submitToAgent` never called). | `server.ts` POST messages |
 | F-12 | **Idempotency key lookup is a table scan.** `hasMessageForRequest` does `meta LIKE '%"requestId":"…"%'` on every delegation. | `db.ts` |
-| F-13 | **SSE has no resume.** Events lack ids; after a reconnect the client cannot ask for what it missed (needs full reload of lists). | `hub.ts`, `app.js` L359+ |
+| F-13 | **SSE had no resume** (corrected severity: the browser already reloads the open channel on every reconnect via `hello` and polls it every 2.5 s, so the practical impact was small; other clients such as Teams/MCP would have had none). *Addressed on branch `feat/bets-first-bite`: change feed + `Last-Event-ID`.* | `hub.ts`, `app.js` L359+ |
 | F-14 | **Audit is mutable and partially lossy.** Plain SQLite table, no hash chain; can contain private-chat approval titles (SECURITY.md notes this); actor is a name. | `db.ts::audit` |
 | F-15 | **Session roles are frozen for 8 h** and no server-side revocation list. | `auth.ts` |
 | F-16 | **Default secret.** `sessionSecret` falls back to `"dev-only-secret-change-me"` with no startup refusal in `oidc` mode. | `config.ts` |

@@ -75,6 +75,11 @@ export const config = {
 		idleMin: num(env.SANDBOX_IDLE_MIN, 30),
 	},
 
+	/** Attention is what the product spends: points per human decision, with a soft daily budget per person. */
+	attention: {
+		dailyBudget: num(env.ATTENTION_BUDGET, 100),
+	},
+
 	limits: {
 		/** Agent-initiated delegations allowed per channel per 10 minutes. */
 		delegationsPer10Min: num(env.MAX_DELEGATIONS, 8),

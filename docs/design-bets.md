@@ -82,3 +82,13 @@ Prompt 15 becomes a recurring **game day**: pick a noise profile, run control an
 1. Event log table + SSE `Last-Event-ID` resume (Bet 2) - fixes F-13 and gives every later prompt a spine.
 2. `attention_cost` on approvals and handoffs, a daily total per human, shown in the UI header (Bet 1) - tiny, and instantly tells us if the idea is any good.
 3. Agent "shift" state in presence (Bet 4): working / waiting / off, derived from Temporal task queue + pending approvals.
+
+## Status of the first bite (branch `feat/bets-first-bite`)
+
+| Item | State |
+|---|---|
+| 1. Resumable event spine | **Partly.** A *change feed* (`change_feed`, migration 3) numbers message/approval changes and the SSE stream honours `Last-Event-ID` (replay of changed entities once, in current state; `reset` when too far behind; private chats filtered). It is **not** yet the domain event log of Bet 2: that arrives with Prompt 05. |
+| 2. Attention | **Done (minimal).** `approvals.attention_cost` (5 per decision, 8 for a live cluster change), `GET /api/attention`, sidebar line "Attention spent + waiting / budget" (`ATTENTION_BUDGET`, default 100). Charged to the decider by `sub`. Handoff/FYI costs, per-human delivery of items and agent reputation are not built. |
+| 3. Agent shift | **Minimal.** Presence carries `backlog {running, approvals}`; the sidebar shows "N waiting". Calendars/windows/backups are not built. |
+
+Honest note: Bets 1, 4 and 8 are my proposals, not part of `goal`; nothing above changes behaviour of the existing demo apart from the extra UI line and ids on the SSE stream.

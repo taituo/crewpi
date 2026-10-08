@@ -15,6 +15,7 @@ import { setAnomaly, startWatcher } from "./watch.ts";
 import { deleteNote, saveNote, visibleNotes } from "./memory.ts";
 import { MAX_UPLOAD, readImage, saveImage } from "./uploads.ts";
 import { budgetState, startBudgetWatch } from "./budget.ts";
+import { attentionFor } from "./attention.ts";
 import { listSandboxes, startSandboxSweeper, stopSandbox } from "./sandbox.ts";
 import { getClient, listLive, signalDecision, startIncident } from "./temporal-client.ts";
 import { startTemporalWorker } from "./temporal.ts";
@@ -96,6 +97,7 @@ function publicState(user: User) {
 		presence: presence(),
 		inference: { ...inferenceInfo(), budget: budgetState() },
 		integrations: listIntegrations(),
+		attention: attentionFor(user.sub),
 	};
 }
 
@@ -111,7 +113,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 	if (m === "GET" && path === "/api/events") {
 		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
 		res.write(`event: hello\ndata: {}\n\n`);
-		hub.add(res, user.sub);
+		const last = req.headers["last-event-id"];
+		hub.add(res, user.sub, last === undefined ? undefined : Number(last));
 		return;
 	}
 
@@ -344,6 +347,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		auditAs(user, "sandbox.stop", { channel: mm[1] });
 		return json(res, 200, { stopped });
 	}
+
+	if (m === "GET" && path === "/api/attention") return json(res, 200, { attention: attentionFor(user.sub) });
 
 	if (m === "GET" && path === "/api/budget") return json(res, 200, { budget: budgetState() ?? null });
 

@@ -231,3 +231,6 @@ html, body { overflow: hidden; }
 .header .pill.over { color: var(--bad); border-color: var(--bad); }
 
 .chip.sbx { margin-left: 4px; } .chip.sbx .linkbtn { padding: 0 4px; font-size: 11px; }
+
+.attn { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.attn.over { color: var(--warn); font-weight: 700; }

@@ -1,5 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
+import { store } from "./db.ts";
+import { changesSince, recordChange } from "./feed.ts";
 
 /** Fan-out of workspace events to every connected browser over server-sent events. */
 const clients = new Map<ServerResponse, string>(); // response -> user sub
@@ -21,14 +23,30 @@ export const hub = {
 		canSee = fn;
 		channelsFor = lister;
 	},
-	add(res: ServerResponse, sub: string) {
+	/** Registers a client. With `lastEventId` it first replays what changed since then (or says "reset"). */
+	add(res: ServerResponse, sub: string, lastEventId?: number) {
+		if (lastEventId !== undefined && Number.isFinite(lastEventId)) {
+			const changes = changesSince(lastEventId);
+			if (changes === "reset") res.write(`event: reset\ndata: {}\n\n`);
+			else {
+				for (const c of changes) {
+					const ev = c.kind === "message" ? { type: "message", message: store.getMessage(c.refId) } : { type: "approval", approval: store.getApproval(c.refId) };
+					const body = c.kind === "message" ? (ev as any).message : (ev as any).approval;
+					const e = body && forUser(ev, sub);
+					if (e) res.write(`id: ${c.sequence}\nevent: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+				}
+			}
+		}
 		clients.set(res, sub);
 		res.on("close", () => clients.delete(res));
 	},
 	publish(event: { type: string; [k: string]: unknown }) {
+		// Message and approval changes are numbered so a reconnecting browser can resume (Last-Event-ID).
+		const ref = event.type === "message" ? (event.message as any) : event.type === "approval" ? (event.approval as any) : undefined;
+		const id = ref ? recordChange(event.type as "message" | "approval", ref.id, ref.channelId) : undefined;
 		for (const [c, sub] of clients) {
 			const e = forUser(event, sub);
-			if (e) c.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+			if (e) c.write(`${id ? `id: ${id}\n` : ""}event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
 		}
 	},
 	get size() {

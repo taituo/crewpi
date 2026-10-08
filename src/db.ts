@@ -35,6 +35,8 @@ export type Approval = {
 	/** Stable subject of the decider; decidedBy is only the display name at the time. */
 	decidedBySub: string | null;
 	requestedBySub: string | null;
+	/** Points this decision costs the human who makes it (see attention.ts). */
+	attentionCost: number;
 	note: string | null;
 	createdAt: number;
 	decidedAt: number | null;
@@ -73,6 +75,7 @@ const rowToApproval = (r: any): Approval => ({
 	decidedBy: r.decided_by,
 	decidedBySub: r.decided_by_sub ?? null,
 	requestedBySub: r.requested_by_sub ?? null,
+	attentionCost: r.attention_cost ?? 5,
 	note: r.note,
 	createdAt: r.created_at,
 	decidedAt: r.decided_at,
@@ -138,15 +141,15 @@ export const store = {
 	},
 
 	/** Idempotent per tool task so a replayed tool finds the approval it already opened. */
-	openApproval(a: { channelId: string; agentId: string; taskId: string; title: string; detail: Record<string, unknown>; requestedBySub?: string }): {
+	openApproval(a: { channelId: string; agentId: string; taskId: string; title: string; detail: Record<string, unknown>; requestedBySub?: string; attentionCost?: number }): {
 		approval: Approval;
 		created: boolean;
 	} {
 		const existing = db.prepare("SELECT * FROM approvals WHERE task_id = ?").get(a.taskId);
 		if (existing) return { approval: rowToApproval(existing), created: false };
 		const r = db
-			.prepare("INSERT INTO approvals (channel_id, agent_id, task_id, title, detail, created_at, requested_by_sub) VALUES (?,?,?,?,?,?,?)")
-			.run(a.channelId, a.agentId, a.taskId, a.title, JSON.stringify(a.detail), Date.now(), a.requestedBySub ?? null);
+			.prepare("INSERT INTO approvals (channel_id, agent_id, task_id, title, detail, created_at, requested_by_sub, attention_cost) VALUES (?,?,?,?,?,?,?,?)")
+			.run(a.channelId, a.agentId, a.taskId, a.title, JSON.stringify(a.detail), Date.now(), a.requestedBySub ?? null, a.attentionCost ?? 5);
 		return { approval: this.getApproval(Number(r.lastInsertRowid))!, created: true };
 	},
 	getApproval(id: number): Approval | undefined {
