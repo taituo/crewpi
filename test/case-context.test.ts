@@ -109,3 +109,16 @@ test("every fact and decision is an event with its sources, in the channel's vis
 	assert.deepEqual(evs[1].sourceRefs, ["approval:3"]);
 	assert.ok(evs.every((e) => e.visibility === "channel:inc"));
 });
+
+test("facts added within the same millisecond come back in a stable order (newest first), and conflicts oldest first", () => {
+	const { cases, db } = fresh();
+	cases.addFact(f({ key: "delivery.date", statement: "10 Oct", by: "sales", sourceRefs: ["message:1"] }));
+	cases.addFact(f({ key: "delivery.date", statement: "14 Oct", by: "production", sourceRefs: ["message:2"] }));
+	cases.addFact(f({ key: "other.topic", statement: "something else", sourceRefs: ["message:3"] }));
+	db.exec("UPDATE case_facts SET observed_at = 1700000000000, created_at = 1700000000000");
+	for (let i = 0; i < 20; i++) {
+		const c = cases.context("inc", 1700000000000 + 1000);
+		assert.deepEqual(c.facts.current.map((x) => x.statement), ["something else", "14 Oct", "10 Oct"], "newest insert first");
+		assert.deepEqual(c.conflicts[0].facts.map((x) => x.addedBy), ["sales", "production"], "a conflict reads in the order it arose");
+	}
+});

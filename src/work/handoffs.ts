@@ -88,7 +88,7 @@ export class HandoffService {
 		const where: string[] = [], args: any[] = [];
 		if (o.channelId) { where.push("channel_id = ?"); args.push(o.channelId); }
 		if (o.statuses?.length) { where.push(`status IN (${o.statuses.map(() => "?").join(",")})`); args.push(...o.statuses); }
-		return (this.db.prepare(`SELECT * FROM handoffs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC LIMIT ?`).all(...args, o.limit ?? 200) as any[]).map(row);
+		return (this.db.prepare(`SELECT * FROM handoffs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(...args, o.limit ?? 200) as any[]).map(row);
 	}
 	/** Active handoffs a recipient has in a channel, oldest first. */
 	activeFor(channelId: string, agent: string): Handoff[] {

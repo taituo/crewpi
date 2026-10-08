@@ -91,21 +91,21 @@ export class CaseService {
 	context(caseId: string, now = Date.now()) {
 		this.guard(caseId);
 		const ttl = config.case.staleMs;
-		const facts = (this.db.prepare("SELECT * FROM case_facts WHERE case_id = ? AND status = 'current' ORDER BY observed_at DESC").all(caseId) as any[]).map(fact);
+		const facts = (this.db.prepare("SELECT * FROM case_facts WHERE case_id = ? AND status = 'current' ORDER BY observed_at DESC, rowid DESC").all(caseId) as any[]).map(fact);
 		const stale = facts.filter((f) => now - f.observedAt > ttl);
 		const fresh = facts.filter((f) => now - f.observedAt <= ttl);
 		const byKey = new Map<string, Fact[]>();
 		for (const f of fresh) byKey.set(f.key, [...(byKey.get(f.key) ?? []), f]);
-		const conflicts = [...byKey.entries()].filter(([, fs]) => new Set(fs.map((f) => f.statement.toLowerCase())).size > 1).map(([key, fs]) => ({ key, facts: fs }));
+		const conflicts = [...byKey.entries()].filter(([, fs]) => new Set(fs.map((f) => f.statement.toLowerCase())).size > 1).map(([key, fs]) => ({ key, facts: [...fs].reverse() })); // oldest first; `fresh` is newest first with a rowid tiebreak
 		const inConflict = new Set(conflicts.flatMap((c) => c.facts.map((f) => f.factId)));
 		const unverified = fresh.filter((f) => (f.confidence === "inferred" || f.confidence === "unverified") && !inConflict.has(f.factId));
-		const decisions = (this.db.prepare("SELECT * FROM decisions WHERE case_id = ? ORDER BY created_at DESC LIMIT 100").all(caseId) as any[]).map(decision);
+		const decisions = (this.db.prepare("SELECT * FROM decisions WHERE case_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 100").all(caseId) as any[]).map(decision);
 		const live = decisions.filter((d) => d.state === "decided" || d.state === "executed");
 		const dk = new Map<string, Decision[]>();
 		for (const d of live) dk.set(d.key, [...(dk.get(d.key) ?? []), d]);
 		const conflictingDecisions = [...dk.entries()].filter(([, ds]) => new Set(ds.map((d) => d.outcome)).size > 1).map(([key, ds]) => ({ key, decisions: ds }));
-		const tasks = this.db.prepare("SELECT * FROM tasks WHERE channel_id = ? AND status = 'open' ORDER BY created_at").all(caseId) as any[];
-		const active = this.db.prepare("SELECT * FROM handoffs WHERE channel_id = ? AND status IN ('requested','accepted','in_progress') ORDER BY created_at").all(caseId) as any[];
+		const tasks = this.db.prepare("SELECT * FROM tasks WHERE channel_id = ? AND status = 'open' ORDER BY created_at, rowid").all(caseId) as any[];
+		const active = this.db.prepare("SELECT * FROM handoffs WHERE channel_id = ? AND status IN ('requested','accepted','in_progress') ORDER BY created_at, rowid").all(caseId) as any[];
 		const activeTasks = new Set(active.map((h) => h.task_id));
 		const openTasks = tasks.map((t) => ({ taskId: t.task_id, title: t.title, owner: t.owner as string | null, dueAt: t.due_at as number | null, overdue: !!t.due_at && t.due_at < now, hasActiveHandoff: activeTasks.has(t.task_id) }));
 		return {

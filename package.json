@@ -25,6 +25,7 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@temporalio/testing": "^1.24.0",
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3"
   },
