@@ -1,14 +1,14 @@
 # CrewPi → Agentic Operations OS & Organization Digital Twin
 ## Yhtenäinen toteutussuunnitelma ja 16 itsenäistä koodauspromptia (00–15)
 
-**Versio:** 1.2 – organisatorisen resilienssin noise testing lisätty; aiempi päätavoite: suurivolyymisen työn delegointi agenteille, ihmisen poikkeusohjaus, Teams-edustaja ja Realm-federointi  
+**Versio:** 1.3 – Teams poistettu ja ADR-vaatimus muutettu suunnitelmaksi (docs/plan.md); 1.2: organisatorisen resilienssin noise testing; päätavoite: suurivolyymisen työn delegointi agenteille, ihmisen poikkeusohjaus ja Realm-federointi  
 **Päiväys:** 8.10.2026  
 **Lähtökoodi:** [taituo/crewpi](https://github.com/taituo/crewpi), `main` (tarkastuksessa SHA `873a01a30eeff381395841d986ad43d65bf6dcfb`)  
 **Käyttötarkoitus:** annetaan koodausklientille vaiheittain; jokainen prompti on oma toteutettava työ.
 
 **Päätavoite:** vapauttaa ihmisiä tuhansien toistuvien työ-, päätös- ja viestintätapahtumien käsin käsittelystä siirtämällä ne valtuutetuille agenteille. Ihminen siirtyy poikkeusten, laadun, strategian ja valvonnan tasolle. Alusta EI pyri korvaamaan asiakkaan olemassa olevaa organisaatiorakennetta; organisaatiomalli on valinnainen työnjako-, käyttöoikeus- ja näkymäkerros, joka voidaan yhdistää nykyisiin tiimeihin ja kanaviin. Myös yksi fyysinen agenttiruntime voi palvella montaa loogista roolia.
 
-**Tuotevariantit:** (1) Teams-/Slack-edustaja nykyisen organisaation sisällä; (2) Agentic Operations -alusta useille agenteille ja prosesseille; (3) Business Realm -malli useille erillisille tai sisaryhtiö-entiteeteille; (4) erillinen synteettinen organisaatiosimulaattori ja digitaalinen kaksonen.
+**Tuotevariantit:** (1) kevyt chat-/CLI-/API-pinta nykyisen organisaation sisällä; (2) Agentic Operations -alusta useille agenteille ja prosesseille; (3) Business Realm -malli useille erillisille tai sisaryhtiö-entiteeteille; (4) erillinen synteettinen organisaatiosimulaattori ja digitaalinen kaksonen.
 
 > **Tavoite:** Rakenna alustasta organisaation keskustelukäyttöliittymä, jossa ihmiset, heidän avustavat tekoälynsä, sisäiset agentit ja ulkoiset MCP-agentit voivat osallistua yhteiseen työhön. Organisaatio määrittää itse rakenteensa ja päätösvaltansa. Sama organisaatiomalli voidaan ajaa eristetyssä synteettisessä maailmassa, simuloida, pysäyttää, palauttaa tilannekuvaan ja haarauttaa vaihtoehtoisiksi aikajanoiksi. Ihmiset voivat liittyä mukaan organisaation omaan rytmiin kokousten, haastattelujen ja tilannekatsausten kautta.
 
@@ -20,13 +20,13 @@
 2. **Exception-driven human oversight:** ihminen saa vain korkean vaikutuksen, epävarmat, epätavalliset tai valtuusrajan ylittävät kysymykset. Ei jatkuvaa hyväksyntäjonon mikromanagerointia.
 3. **Human-native abstraction:** kokoukset, rytmit, keskustelut, raportit ja organisaatioroolit ovat ennen kaikkea ihmisen kognitiivinen käyttöliittymä; ne eivät vaadi 1:1 fyysisiä agenttiprosesseja.
 4. **Existing-org-first:** mallinna nykyinen organisaatio tai pelkkä sen pieni osa; älä vaadi organisaatiokaavion tai työprosessien uusimista käyttöönoton ehtona.
-5. **Channels as surfaces:** Teams, oma chat, MCP ja API ovat saman domain-toiminnan käyttöliittymiä, eivät itsenäisiä päätöstietokantoja.
+5. **Channels as surfaces:** Oma chat, CLI, MCP ja API ovat saman domain-toiminnan käyttöliittymiä, eivät itsenäisiä päätöstietokantoja.
 6. **Realm as business federation:** `BusinessRealm` ryhmittelee erillisiä `Entity`-toimijoita (esim. sisaryhtiöitä, liiketoimintayksiköitä, asiakkaan yrityksiä, simulaatiota). Älä sekoita sitä Keycloakin identiteetti-`realm`-käsitteeseen.
 7. **Measured autonomy:** seuraa läpimenoa, työjonon pituutta, ihmisen huomiokustannusta, virheitä, korjauskierroksia, turvallisuusrajoituksia ja agenttien kustannusta per valmistunut työyksikkö.
 8. **Information robustness:** testaa tiedon puuttumista, vääristymistä, ristiriitoja ja virheellisten päätelmien leviämistä kontrolloidusti eristetyssä synteettisessä maailmassa; pidä todellinen tila aina erillään toimijoiden havainnoista.
-9. **Truthful product state:** CrewPi:n nykyinen demo toimii rajatussa muodossa; tässä kuvatut skaalaus-, Teams-, Realm- ja simulaatio-ominaisuudet ovat toteutussuunnitelmia, eivät valmista tuotantoteknologiaa.
+9. **Truthful product state:** CrewPi:n nykyinen demo toimii rajatussa muodossa; tässä kuvatut skaalaus-, Realm- ja simulaatio-ominaisuudet ovat toteutussuunnitelmia, eivät valmista tuotantoteknologiaa.
 
-**Esimerkkikulku:** 10 000 saapuvaa työyksikköä → policy engine luokittelee ja valtuuttaa → Temporal-jonot ja workerit jakavat työkuorman → rajatut agentit suorittavat → tulokset tarkastetaan ja kirjataan → vain poikkeukset nostetaan ihmiselle → Teamsin tai chatin organisaatioedustaja raportoi olennaisen.
+**Esimerkkikulku:** 10 000 saapuvaa työyksikköä → policy engine luokittelee ja valtuuttaa → Temporal-jonot ja workerit jakavat työkuorman → rajatut agentit suorittavat → tulokset tarkastetaan ja kirjataan → vain poikkeukset nostetaan ihmiselle → chatin tai CLI:n katsaus raportoi olennaisen.
 
 **Tämä on suunnittelu- ja toimeksiantodokumentti, ei väite siitä, että ominaisuudet olisi jo toteutettu tai testattu.** Jokaisen promptin alussa on velvoite tarkastaa repositorion senhetkinen tila. Näin dokumentti säilyy käyttökelpoisena, vaikka koodiin tulee muutoksia.
 
@@ -35,7 +35,7 @@
 # A. Käyttöohje koodausklientille
 
 1. Avaa CrewPi-repositorio koodausklientissä ja anna ensin **Prompti 00** kokonaan. Se tuottaa auditoidun suunnitelman, ei tee tuotantokoodin muutoksia.
-2. Tarkista ehdotetut ADR-päätökset ja hyväksy työn rajaus. Tee sitten **yksi prompti kerrallaan** suositellussa järjestyksessä alla.
+2. Lue suunnitelma (`docs/plan.md`) ja hyväksy työn rajaus. Tee sitten **yksi prompti kerrallaan** suositellussa järjestyksessä alla.
 3. Aloita jokainen uusi vaihe tuoreesta repository-tilanteen tarkistuksesta; aikaisempi suunnitelma on ohje, ei oletus toteutuksen valmistumisesta.
 4. Vaadi jokaisesta vaiheesta muutostiedostot, migraatiot, testit, lyhyt demo, rajaukset ja keskeneräiset asiat. Älä hyväksy pelkkää näyttävää käyttöliittymää, jonka API:t ovat feikkejä.
 5. Säilytä demotila toimivana ja käsittele uudet ominaisuudet tarvittaessa feature flagien takana.
@@ -53,7 +53,7 @@
 | 7 | **01** Luonnollinen chat | Ihmisen ymmärrettävä näkymä yhteiseen toimintaan |
 | 8 | **02** Ulkoiset agentit ja avustetut viestit | Provenienssi, identiteetti ja oikeudet |
 | 9 | **03** MCP-rajapinta | Yhteisen domain-API:n turvallinen avaaminen |
-| 10 | **12** Teams- ja kanavaedustaja | Ohut adapteri eikä rinnakkainen agenttiorganisaatio |
+| – | ~~12~~ Teams- ja kanavaedustaja | **Poistettu**: ei enää kiinnostava |
 | 11 | **09** Ihmisen rytmi ja paluuhaastattelu | Katsaukset ja osallistumisen ajastus |
 | 12 | **10** Kokoukset ja delegoitu valta | Yhteiset päätöskäytännöt |
 | 13 | **06** Synteettinen maailma | Erillinen kehityspolku yhteisten domain-sopimusten pohjalta |
@@ -140,14 +140,14 @@ Varmista, että kaikki datahaku ja julkaisu sidotaan sallittuun organisaatioon, 
 
 **Seuraava vaihe:** erota Temporal Workereita rooleittain/task queue -ryhmittäin. Rakenna agentin ajopalvelulle stable `requestId` / idempotentti `submit` / `status` / `cancel` -sopimus ja hallittu omistaja/shard, mikäli Pi Durable jää käyttöön.
 
-**Älä väitä**, että pelkkä usean Temporal Worker -instanssin käynnistäminen sallisi saman Pi Durable SQLite -varaston monikirjoittajaisuuden. Arvioi erillisen agenttishardin, uuden runtime-toteutuksen tai vaihtoehtoisen tallennusratkaisun kustannukset ADR:ssä. DBOS voi olla vaihtoehtoinen prosessimoottori, mutta tähän toteutussuunnitelmaan ei tehdä Temporal→DBOS-vaihtoa ilman erillistä päätöstä.
+**Älä väitä**, että pelkkä usean Temporal Worker -instanssin käynnistäminen sallisi saman Pi Durable SQLite -varaston monikirjoittajaisuuden. Arvioi erillisen agenttishardin, uuden runtime-toteutuksen tai vaihtoehtoisen tallennusratkaisun kustannukset suunnitelmassa. DBOS voi olla vaihtoehtoinen prosessimoottori, mutta tähän toteutussuunnitelmaan ei tehdä Temporal→DBOS-vaihtoa ilman erillistä päätöstä.
 
 ## B5. Valinnaisen organisaatiomallin ja Realm-rajauksen suhde
 
 - `Tenant`: tuotteen asiakastili/asiakasraja (ei välttämättä sama kuin liiketoimintayhtiö).
 - `BusinessRealm`: ryhmä tai yhteistyöalue, jonka sisällä voi olla useita organisaatioentiteettejä. Kaikkia samaan realmiin kuuluvia entiteettejä EI oletusarvoisesti yhdistetä oikeuksiltaan.
 - `Entity`: toimiva yksikkö, kuten juridinen yhtiö, sisaryhtiö, toimiala, palveluyksikkö tai itsenäinen tekoälyorganisaatio.
-- `OrganizationProfile`: vapaaehtoinen roolien, riippuvuuksien ja työvirtojen kuvaus. Yhtiö voi käyttää vain yhtä edustaja-agenttia Teamsissa ilman tätä laajaa mallia.
+- `OrganizationProfile`: vapaaehtoinen roolien, riippuvuuksien ja työvirtojen kuvaus. Yhtiö voi käyttää vain yhtä edustaja-agenttia chatissa ilman tätä laajaa mallia.
 - `Representative`: yhden entityn valtuutettu viestintäpinta. Näkee vain sille sallitut tulokset; ei automaattisesti kaikkia yhtiön salaisuuksia.
 - `AgentRole`: ihmiselle ymmärrettävä looginen vastuu; monta roolia voi jakaa yhden fyysisen mallipalvelimen tai agenttiruntimen.
 - `Execution`: konkreettinen suoritus/resurssi, joka voidaan skaalata ja sijoittaa riippumatta organisaation roolien määrästä.
@@ -165,7 +165,7 @@ Varmista, että kaikki datahaku ja julkaisu sidotaan sallittuun organisaatioon, 
 
 Ympäristöön lisätään kontrolloitu `NoiseProfile` ja `PerturbationSchedule`, joka muuttaa vain simuloitujen toimijoiden havaintoja, viestien toimitusta, työkaluvastauksia tai välitettyä tietoa. Esimerkiksi virheellinen toimituspäivä voidaan antaa hankinta-agentille, mutta todellinen tilaus pysyy perustilassa ennallaan. Jos agentti päättää sen seurauksena muuttaa tilausta, varsinainen state muuttuu vain hyväksytyn domain-komennon kautta — virheellä on siis seurauksia, mutta se ei taio maailmaan tapahtumia ilman hyväksyttyä toimintaa.
 
-Vertaa jokaista testiä puhtaaseen vertailuajoon (`control`) **samasta snapshotista ja samasta satunnaissiemenestä**. Stokastisille kielimalleille tallenna käytetyt vastaukset; siemen ei yksin takaa niiden toistettavuutta. Injektoi vain eristettyyn simulaatioon; älä kirjoita testivirheitä oikeisiin CRM-/ERP-/Teams-/MCP-järjestelmiin.
+Vertaa jokaista testiä puhtaaseen vertailuajoon (`control`) **samasta snapshotista ja samasta satunnaissiemenestä**. Stokastisille kielimalleille tallenna käytetyt vastaukset; siemen ei yksin takaa niiden toistettavuutta. Injektoi vain eristettyyn simulaatioon; älä kirjoita testivirheitä oikeisiin CRM-/ERP-/MCP-järjestelmiin.
 
 Noise-tyypit: `missing_information`, `stale_information`, `contradictory_message`, `false_assertion`, `numeric_error`, `misrouted_message`, `delayed_message`, `duplicated_message`, `unreliable_source`, `tool_response_corruption`, `authority_spoofing` (vain simuloitu identiteetti ja turvallisuustesti), `prompt_injection_test` (eristetyt fixturet). Parametroi kuormitus, viive, virheen vakavuus, toistuvuus, lähteen uskottavuus ja kohteiden verkostollinen asema. Älä luota agentin itse arvioimaan totuuteen: käytä ground truth -tilaa arvioinnissa.
 
@@ -195,7 +195,7 @@ Mittaa ainakin: `MisinformationPropagationRate`, `TimeToDetection`, `TimeToCorre
 Esimerkkejä domain-rajoista – toteuta vastaaviksi soveltuvat rakenteet, älä kopioi alle suoraan ilman API:n suunnittelua:
 
 ```ts
-// Käsitteellinen malli; lopulliset toteutustyypit päätetään ADR:ssä.
+// Käsitteellinen malli; lopulliset toteutustyypit päätetään suunnitelmassa (docs/plan.md).
 type ActorRef = { tenantId: string; organizationId: string; participantId: string };
 type WorldScope = { mode: "live" } | { mode: "synthetic"; worldId: string; branchId: string };
 type CommandEnvelope<T> = {
@@ -248,7 +248,7 @@ TEHTÄVÄ – AUDITOI, ÄLÄ MUUTA VIELÄ TUOTANTOKOODIA
    yksiprosessinen Pi Durable, fake-integraatioiden sekoittuminen oikeaan dataan.
 4. Ehdota yhteinen tietomalli organisaatioille, rooleille, osallistujille, ketjuille,
    tapauksille, handoffeille, päätöksille, tapaustiedolle, maailmoille, tapahtumille ja haaroille.
-5. Tee ADR-vaihtoehdot: nykyisen SQLite-demon säilytys + myöhempi Postgres-siirtymä;
+5. Kirjaa päätösvaihtoehdot suunnitelmaan lyhyesti (suositus ja syy): nykyisen SQLite-demon säilytys + myöhempi Postgres-siirtymä;
    Temporal/Pi Durable -vastuuraja; MCP-auth; simulaation eristys; viestien toimitus;
    agenttien hajauttamisen vaihtoehdot.
 6. Määritä jokaisen suunnitellun palvelun sovellusrajapinta ja totuuden lähde.
@@ -256,12 +256,9 @@ TEHTÄVÄ – AUDITOI, ÄLÄ MUUTA VIELÄ TUOTANTOKOODIA
 8. Tarkista nykyiset kirjastojen API:t – älä oleta aiemmin mainittujen ominaisuuksien
    olevan käytettävissä muuttumattomina.
 
-TUOTOKSET
-- docs/architecture-target.md
-- docs/data-model.md
-- docs/implementation-roadmap.md
-- docs/risk-register.md
-- docs/adr/ (arkkitehtuuripäätösten ehdotukset)
+TUOTOS
+- docs/plan.md: yksi suunnitelma, jossa nykytila, tavoitearkkitehtuuri, tietomalli, vaiheistus, riskit lyhyesti ja avoimet päätökset suosituksineen.
+  Ei erillistä ADR-hakemistoa eikä riskirekisteriä. Päätös kirjataan yhdellä rivillä: päätös – syy – milloin tarkistetaan.
 
 Kirjaa jokaiselle muutokselle muuttuvat tiedostot, riskit, migraatiot, tarkat
 hyväksymiskriteerit ja testit. Erottele todettu nykytila, oletus ja uusi ehdotus.
@@ -279,7 +276,7 @@ Noudata toteutussuunnitelman yhteisiä rajoja B–C.
 
 ```text
 Toteuta CrewPi:hin Organization Registry & Builder hyväksytyn arkkitehtuurisuunnitelman mukaan.
-Tutki ensin nykyinen AGENTS, SEED_CHANNELS, channels, auth ja db sekä auditoinnin ADR:t.
+Tutki ensin nykyinen AGENTS, SEED_CHANNELS, channels, auth ja db sekä suunnitelman päätökset (docs/plan.md).
 
 TAVOITE
 Käyttäjä voi mallintaa yrityksen, organisaation, matriisin, verkoston, projektiryhmän,
@@ -833,68 +830,16 @@ kirjautuminen. Käytä mitattuja tuloksia; älä lupaa tavoiteläpimenoa
 ilman kuormitustestiä. Testaa poikkeustilanne, joka vaatii ihmisen,
 sekä tavallinen tilanne, joka valmistuu ilman ihmistä.
 
-Toimita koodi, tietomigraatiot, testit, mittarit, ADR ja migraatiopolku
+Toimita koodi, tietomigraatiot, testit, mittarit, päätöskirjaus suunnitelmaan ja migraatiopolku
 nykyisen yhden prosessin CrewPi-demosta. Ehdota turvallinen MVP
 ennen suuren monireplikaiseen tuotantoon siirtymistä.
 ```
 
 **Valmis, kun:** rutiinityöt etenevät agenttien kautta jäljitettävästi ja ihminen käsittelee vain nimenomaisesti rajatut poikkeukset.
 
-## PROMPTI 12 — Organization Representative & Microsoft Teams Channel Adapter
+## PROMPTI 12 — (poistettu)
 
-```text
-Toimit CrewPi:n ulkoisten viestintäpintojen arkkitehtina.
-Toteuta yhdelle organisaatioentiteetille yksi helposti tavoitettava
-Organization Representative / Liaison Agent esimerkiksi Teamsiin.
-Se ei ole uusi täysivaltainen CEO-agentti vaan hallittu viestintä- ja
-raportointirooli olemassa olevaan organisaatioon.
-
-TARKISTA ENSIN
-Nykyinen CrewPi-chat, authorKind/provenance, org/entity/realm-eristys,
-MCP-palvelut, domain-API, Tenant/Entity/Representative-mallit sekä
-Microsoft Teamsin tämänhetkinen virallinen Agents/Teams SDK:n tapa
-rakentaa henkilökohtaiset, ryhmä- ja kanavakeskustelut.
-
-TOTEUTA
-1. Platform-neutral ChannelAdapter-sopimus: receiveMessage,
-   sendMessage, sendDigest, postCard, resolveIdentity, acknowledge.
-2. TeamsAdapter virallisen tuetun TypeScript SDK:n avulla. Tarkista
-   asennus- ja suostumusvaatimukset, Teams/Entra-identiteetit,
-   botin keskustelureferenssit ja proaktiivisten viestien rajoitteet.
-3. Representative-profiili per Entity: nimi, personointi, kanavat,
-   pääsyrajat, raportointirytmi, yleisö, hiljaiset ajat, eskalointisäännöt.
-4. Sisään tuleva viesti reititetään yhteen WorkItemiin, Caseen tai
-   kyselyyn. Vastaus perustuu yhteiseen domain-tilaan eikä Teamsin
-   keskusteluhistoria ole itsenäinen totuuden lähde.
-5. Raportit ja katsaukset: daily brief, exceptions only, weekly
-   summary, on-demand status sekä rajattu keskusteleva Q&A.
-6. Sama edustaja voi tiivistää tuhansia agenttien suorituksia
-   ihmiselle muutamaan olennaiseen havaintoon lähdeviitteineen.
-7. Erota palvelun oma identiteetti ja viestin alkuperä; älä esiinny
-   ihmisenä. Ristiinkanavaviestintä kunnioittaa käyttäjän ja entityn
-   oikeuksia. Vältä fan-out-spämmiä.
-8. Määrittele Slack/Email/Web-Chat-adapterien laajennuspiste,
-   mutta älä rakenna niitä vielä ellei toteutus vaadi.
-9. Näytä valtuuksien mukaiset rajatut toiminnot: pyydä status,
-   luo tehtävä, ehdota prioriteettia, reagoi poikkeukseen.
-10. Kaikki Teams-viestit ja korttien actionit kulkevat samaa
-    autentikointi-, policy- ja audit-polun kautta kuin oma UI/MCP.
-
-HYVÄKSYNTÄ
-Yhden entityn edustaja vastaa Teamsissa asematilanteeseen ja
-julkaisee proaktiivisen poikkeuskoosteen vasta, kun Teams-asennus
-ja valtuutus sallivat sen. Toinen entity ei pysty lukemaan vastausta.
-Sama tilanne näkyy sisäisessä CrewPi-chatissa identtisellä
-correlationId:llä mutta sen oikeuksien mukaan.
-
-TOTEUTUSTAPAPÄÄTÖS
-Jos Teams-testitunnuksia tai live-ympäristöä ei ole, rakenna
-SDK-rajapintaan sovitettu adapteri ja yksikkö-/integraatiotestit mockilla.
-Älä väitä live-Teams-integraatiota testatuksi ilman todennettua testiä.
-Dokumentoi asennus, oikeudet ja puuttuvat alustakohtaiset rajat.
-```
-
-**Valmis, kun:** yksi edustaja tekee usean agentin työn ihmiselle ymmärrettäväksi Teamsissa avaamatta organisaation sisäisiä oikeuksia.
+Teams-adapteri ja organisaatioedustaja on pudotettu pois: ei enää kiinnostava. Numero jätetty paikalleen, jotta muut viittaukset pysyvät. Ulkoiset pinnat ovat chat, CLI, API ja MCP (ks. periaate 5). Jos edustaja-agentti tarvitaan myöhemmin, se on tavallinen chat-agentti, ei oma prompti.
 
 ## PROMPTI 13 — Business Realm, Sister Entities & Federated Operations
 
@@ -940,7 +885,7 @@ Testaa kaksi sisaryhtiötä A ja B, joilla on eri asiakasdata.
 A saa pyytää B:ltä yhden sallitun palvelun mutta ei lukea
 B:n salaista tietoa. Peruuta jakamislupa kesken työn ja testaa
 seuraavat luku- ja julkaisuyritykset. Testaa hakutulokset,
-muistitiivistelmät, proaktiiviset Teams-raportit, MCP-kutsut,
+muistitiivistelmät, proaktiiviset raportit, MCP-kutsut,
 audit ja simulaatiohaarojen eristys.
 
 Säilytä nykyinen single-org CrewPi yhteensopivana; migroi se
@@ -981,12 +926,12 @@ TOTEUTA
    p95 completion time, cost per outcome, uudelleenkäsittelyn
    määrä, audit-completeness ja poikkeusten MTTR.
 8. Ihmisen huomiota säästävä julkaisutapa: ei jokaista tapahtumaa
-   Teamsiin, vaan sovittujen rytmien mukaan koostettu tilanne.
+   chattiin, vaan sovittujen rytmien mukaan koostettu tilanne.
 9. Privacy by design: aggregaatit eivät saa paljastaa toiselle
    entitylle luottamuksellista dataa pienistä ryhmistä.
 10. Pystytä end-to-end demo: automaattiset 200 synteettistä
     työtapahtumaa, kaksi policy-poikkeusta, yksi manuaalinen
-    korjaus ja lopussa Teams-/chat-raporttinäkymä.
+    korjaus ja lopussa chat-raporttinäkymä.
 
 HYVÄKSYNTÄ
 Todista, että suurin osa testin matalariskisistä töistä valmistuu
@@ -1041,7 +986,7 @@ Vertaa molempien haarojen virheellisiä päätöksiä, vaikutusta synteettiseen 
 ### Eristys ja turvallisuus
 
 - `simulationOnly: true`: kaikki häiriöadapterit ovat käytettävissä vain synteettisen maailman prosesseissa; virhetilanteissa oletusarvo on kieltäminen.
-- Älä injektoi väärää tietoa oikeisiin CRM/ERP/Teams/MCP-työkaluihin tai käyttäjien live-keskusteluihin.
+- Älä injektoi väärää tietoa oikeisiin CRM/ERP/MCP-työkaluihin tai käyttäjien live-keskusteluihin.
 - Testiloki ei saa vuotaa agentille salaisia odotusarvoja eikä simulaation vääriä viestejä saa näyttää oikeina auditoinneissa.
 - Säilytä alkuperäinen historia muuttumattomana ja erota testin haarat toisistaan.
 - LLM:n vastaukset ja koulutustilanteita muistuttavat synteettiset käyttäytymismallit eivät riitä todellisen yrityksen toiminnan ennustamiseen. Raportoi epävarmuus.
@@ -1083,11 +1028,11 @@ Lisäksi uusi käyttötapaus:
 
 12. Muodosta BusinessRealm, jossa kaksi sisaryhtiöentiteettiä jakaa yhden rajatun palvelun ilman asiakastietojen sekoittumista.
 13. Syötä 10 000 synteettistä työyksikköä eri työjonoihin, mittaa läpimeno ja varmista, että ihmistä tarvitaan vain testin määritellyissä poikkeustapauksissa.
-14. Julkaise entitykohtaiselle edustajalle vain oikeuksien sallima katsaus ja keskustele sen kanssa Teams-adapterin mockilla tai aidolla testivuokraajalla.
-15. Tarkista sama agenttityö sekä API-, chat-, MCP- että Teams-pinnasta yhteisellä correlationId:llä.
+14. Julkaise entitykohtaiselle edustajalle vain oikeuksien sallima katsaus chatissa.
+15. Tarkista sama agenttityö sekä API-, CLI-, chat- ja MCP-pinnasta yhteisellä correlationId:llä.
 16. Käynnistä väärän tiedon injektointikoe synteettisessä maailmassa; varmista, että tieto voidaan jäljittää ja korjata, mutta oikean maailman tila ei muutu.
 
-## Julkaisuportti – hylkää toteutus, jos jokin ei täyty
+## Julkaisuportti (ohjeellinen tarkistuslista, ei pakollinen)
 
 - [ ] Nykyiset testit ja demo toimivat tai regressiot on dokumentoitu ja korjattu.
 - [ ] Jokainen palvelu käyttää samaa todennettua identiteetti-, tenant- ja org-rajaa.
@@ -1105,7 +1050,6 @@ Lisäksi uusi käyttötapaus:
 - [ ] Monireplikaisuutta ei mainosteta ennen kuin Pi Durable -omistajuus ja yhteinen tallennus on ratkaistu.
 - [ ] Sisarentiteettien data, muisti, viestit ja raportit eivät vuoda Realm-rajauksen yli.
 - [ ] Delegoitu WorkItem on jäljitettävä ja policy-päätös tarkistettavissa.
-- [ ] Teams-edustaja ei kierrä käyttöoikeuksia eikä peitä agentin ja ihmisen identiteettieroa.
 - [ ] Autonomian todellinen hyöty mitataan käsittelymäärällä, ihmisen huomiolla, laadulla ja kustannuksella.
 
 ## Tekniset testaustasot
@@ -1119,7 +1063,7 @@ Lisäksi uusi käyttötapaus:
 
 ---
 
-# F. Tarkoituksella avoimet valinnat – päätä Promptissa 00
+# F. Tarkoituksella avoimet valinnat – päätä suunnitelmassa (docs/plan.md)
 
 1. **Tietovarasto ja migraatio:** pidetäänkö nykyinen SQLite demolle ja käytetäänkö PostgreSQL:ää uudelle hajautettavalle domain-tilalle heti vai vaiheittain?
 2. **Pi Durable pitkällä aikavälillä:** yksi aktiivinen storage-omistaja/shard vai myöhemmin uudelleen toteutettu agentti-runtime Temporal Activityjen ympärille?
@@ -1131,7 +1075,7 @@ Lisäksi uusi käyttötapaus:
 8. **MCP-yhteyden identiteetti:** organisaatiokohtainen client registration, per-user delegation, tokenien elinkaari ja revokaatio.
 9. **Simulaation skaalautuminen:** erilliset jonot ja workerit; raskas mallipohjainen simulointi ei saa ruuhkauttaa live-keskusteluja.
 
-**Suositeltu ensimmäinen tuotekokonaisuus (vertical slice):** yksi olemassa olevan organisaation `Entity`, yksi Teams-adapterin mock-edustaja, 200 synteettistä tavallista WorkItemiä, kaksi poikkeusta ja yksi luonnollinen keskustelu, josta ihmisen on helppo saada katsaus. Sen jälkeen lisätään kaksi sisaryhtiötä ja testataan tietorajaus. Snapshot/fork on erillinen simulaatiopolku eikä sen tarvitse viivyttää operatiivista MVP:tä.
+**Suositeltu ensimmäinen tuotekokonaisuus (vertical slice):** yksi olemassa olevan organisaation `Entity`, 200 synteettistä tavallista WorkItemiä, kaksi poikkeusta ja yksi luonnollinen keskustelu, josta ihmisen on helppo saada katsaus. Sen jälkeen lisätään kaksi sisaryhtiötä ja testataan tietorajaus. Snapshot/fork on erillinen simulaatiopolku eikä sen tarvitse viivyttää operatiivista MVP:tä.
 
 ---
 
@@ -1151,11 +1095,6 @@ Lisäksi uusi käyttötapaus:
 **Dokumentin pääperiaate:** organisaatio on versionoitu malli, keskustelu on sen ihmisystävällinen käyttöliittymä, agentit toteuttavat rajattuja toimintoja, Temporal ohjaa pitkäkestoisia prosesseja ja synteettinen maailma mahdollistaa tilojen palauttamisen sekä vaihtoehtoisten tulevaisuuksien tutkimisen.
 
 ## H. Ulkoiset integraatiot ja termit (uusien vaiheiden taustamateriaali)
-
-- Microsoft Teams Agents SDK / Teams SDK: https://learn.microsoft.com/en-us/microsoftteams/platform/agents-in-teams/build-agent-toolkit
-- Teamsin henkilökohtaiset, ryhmä- ja kanavakeskustelut: https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/channel-and-group-conversations
-- Teamsin proaktiiviset ilmoitukset ja asennuksen edellytykset: https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/send-proactive-messages
-- Teamsin tapahtuma- ja kokousintegraatiot: https://learn.microsoft.com/en-us/microsoft-365/agents-sdk/teams/teams-extension
 
 **Terminologia:** `Organization Representative` / `Liaison Agent` = asiakasorganisaation viestinnällinen edustaja; `Rapporteur Agent` = rajatummin yhteenvedon tai kokouspöytäkirjan tuottaja; `Business Realm` = käyttäjän kuvaama liiketoiminnallisten entityjen joukko, ei Keycloak/OIDC-identiteettirealm.
 
