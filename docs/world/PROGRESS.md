@@ -35,3 +35,24 @@ Two briefs (`.TASK.md` in separate git worktrees, fresh opencode sessions in her
 - **qa-dm-privacy**: `test/dm-privacy.test.ts`, 9 checks with positive controls, live SSE streams for four users, memory, approvals, audit. Took 3 min 28 s. It **found a real leak** (the audit trail showed titles of private-chat approvals to approvers who cannot see the chat), kept the assertion as a `todo`, did not touch product code and said so. Fixed here on `fix/audit-private-titles` (entries about channels the reader cannot see are redacted); the test is now a plain passing test; SECURITY.md updated.
 - Process notes: both agents asked for a directory permission once (I answered by reading what it asked for first), neither touched files outside its brief, both committed on their own branch. Briefs that say exactly which files may change, and that product leaks are findings not fixes, worked. What the worker could not do: judge its own result (it said PASS where the evidence was thin in the earlier QA run); every result still needed a reviewer.
 - Next: M1 (IT-ops domain and problem catalog).
+
+## 2026-10-08 M1 done (branch `feat/world-m1`, on top of M0)
+Test first (8 domain tests + 1 CLI test). Whole suite 135/135, `tsc` 0 errors, `npm run world:check` 32/32.
+
+Design: `src/world/itops/` = `catalog.ts` (services and dependencies, 7 problem kinds, `rightFix` and `judge`: the physics of fixing), `state.ts` (**the open incidents are the single source of truth; a service's condition is derived by `effective()`**, so the world cannot lie and overlapping faults never undo each other), `symptoms.ts` (what a responder sees: metrics and log lines, never the cause), `spec.ts` (three Tier-0 policies: `itops:oracle`, `itops:naive`, `itops:none`; actors chaos, escalator, responder). Specs are selectable from the CLI: `crew world new ops --spec itops:oracle`.
+
+| M1 acceptance | Result |
+|---|---|
+| a Tier-0 oracle resolves every problem type | 273 of 273 incidents in a year, all 7 kinds, MTTR 31 min, 0 harmful fixes |
+| a naive fixer makes >= 2 types worse | 283 harmful fixes in a year; bad restarts hit capacity, false alarms, dependency outages |
+| same seed -> same incident list | yes, and **the same list for every responder policy** (the responder cannot change the weather; asserted) |
+| 90 days give a plausible, non-degenerate mix | property test over 10 seeds: 35-100 incidents, >= 5 kinds, none above 40%, clustered in business hours |
+| nobody responds | problems escalate to the top severity by themselves |
+
+Numbers (seed `ops-1`): oracle 365 d: 273 incidents (noisy_alert 69, bad_config 49, capacity 49, bad_deploy 35, memory_leak 27, dependency_down 27, expired_cert 17), 526 ms wall. Naive 365 d: same 273 incidents, 111 resolved, 162 open, impact about 9000x the oracle's because unresolved problems keep costing for the whole year (severity-weighted minutes, so this number is a stress indicator, not a forecast). No responder, 90 d: 59 incidents, all open.
+
+**Mutation check of the tests** (break the code on purpose; the tests must notice): 6 of 6 mutations are caught (a harmless restart on a saturated service; arrivals depending on the policy; a fault missing from the effective state; false alarms that are harmless to act on; no escalation; flat arrival rate). The first version of the "arrivals depend on state" mutation was too weak (the oracle resolves faults so fast that nothing was ever open at the next arrival) and was replaced by one that makes the random stream depend on the policy.
+
+Honest limits: causes are simple (one fault per incident, no cascading second incident from a wrong fix, only a severity bump); services have no load model beyond the cause; the fixer is a rule, not an agent (that is M3); time of day matters only for arrivals; nothing renders yet (M4). Customer impact counts severity at the end of an incident.
+
+Next: M2 (synthetic tools with the real tools' names and shapes, fault injection, the no-live-write tripwire).

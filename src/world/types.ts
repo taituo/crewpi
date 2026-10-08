@@ -8,6 +8,8 @@ export interface Rng {
 	poisson(mean: number): number;
 	int(min: number, max: number): number;
 	chance(p: number): boolean;
+	pick<T>(items: readonly T[]): T;
+	weighted<T>(items: readonly { item: T; weight: number }[]): T;
 	state(): string;
 	fork(label: string): Rng;
 }

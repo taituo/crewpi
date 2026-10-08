@@ -60,3 +60,18 @@ test("crew world: clear errors", async () => {
 	assert.match((await crew("world", "new", "delta", "--seed", "b")).err, /already exists/);
 	assert.match((await crew("world", "run", "delta")).err, /--days|--until/);
 });
+
+test("crew world: the IT-operations worlds can be created from the terminal and tell their story", async () => {
+	assert.equal((await crew("world", "new", "ops1", "--spec", "itops:oracle", "--seed", "x")).code, 0);
+	const ran = await crew("world", "run", "ops1", "--days", "30");
+	assert.equal(ran.code, 0, ran.err);
+	const st = (await crew("world", "status", "ops1")).out;
+	assert.match(st, /^spec: itops:oracle$/m);
+	assert.ok(Number(field(st, "events")) > 40, `a month of operations has events (${field(st, "events")})`);
+	assert.match((await crew("world", "new", "ops2", "--spec", "nope")).err, /itops:naive/, "the error lists the available specs");
+	// a different responder policy is a different world file but the same incidents arrive
+	assert.equal((await crew("world", "new", "ops3", "--spec", "itops:naive", "--seed", "x")).code, 0);
+	await crew("world", "run", "ops3", "--days", "30");
+	const a = (await crew("world", "status", "ops1")).out, b = (await crew("world", "status", "ops3")).out;
+	assert.notEqual(field(a, "hash"), field(b, "hash"), "different responders write different histories");
+});
