@@ -53,3 +53,4 @@ Delivery is at-least-once to each destination; consumers are idempotent through 
 - No tenant filter in the new queries yet beyond the `tenant_id` columns (single tenant today); the registry routing is read-only and only knows the default organization.
 - `events` is not yet the SSE spine; the browser still polls messages. `change_feed` (parked branch) would be replaced by `events.sequence`.
 - Handoffs are agent-to-agent; person-to-person handoffs and a UI action to reject/decline as an agent are not built (the service supports `reject`).
+- **Only agent-to-agent handoffs use the outbox.** A person's message to an agent still goes `POST /messages -> submitToAgent` in-line, so finding F-11 (a crash between storing the message and dispatching it) is **not yet fixed for that path**. Moving it behind the same outbox (a `message.posted` event with a dispatch consumer) is the next small step.
