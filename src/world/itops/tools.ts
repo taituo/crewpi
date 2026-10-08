@@ -139,7 +139,9 @@ const TOOLS: Record<string, ToolDef> = {
 	jira_search: {
 		params: ["text", "status", "assignee"], write: false,
 		run: (a, e) => {
-			const rows = Object.values(e.state.incidents).map((i) => {
+			// only the tickets that can match are turned into rows (a long run has thousands of resolved ones)
+			const wantStatus = a.status ? String(a.status).toLowerCase() : "";
+			const rows = Object.values(e.state.incidents).filter((i) => !wantStatus || (i.status === "open" ? "open" : "done") === wantStatus).map((i) => {
 				const m = symptoms(e.state, { ...i, status: "open" }, e.now);
 				const alert = m.alerts[0] ?? `${i.service} reports a problem`;
 				return { key: `OPS-${100 + Number(i.id.slice(4))}`, status: i.status === "open" ? "Open" : "Done", priority: ["Low", "Medium", "High"][i.severity - 1], at: i.openedAt, summary: `${i.service}: ${alert}` };

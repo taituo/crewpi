@@ -121,3 +121,11 @@ test("one outage seen from two tickets gets one fix per shift, not two", async (
 	assert.equal(w.events().filter((e: any) => e.type === "incident.resolved").length, 2);
 	w.close();
 });
+
+test("two agents with the same id are refused up front, not silently merged (found by the breaker worker, F5)", async () => {
+	assert.throws(() => withAgents(itopsSpec("none"), ["ops-1", "ops-1"], HOUR), /duplicate agent id "ops-1"/);
+	assert.throws(() => withAgents(itopsSpec("none"), ["ops-1", ""], HOUR), /agent id/i);
+	const w = open();
+	await assert.rejects(runAgents(w, { agents: [OPS, { ...OPS }], untilDay: 1 }), /duplicate agent id "ops-1"/);
+	w.close();
+});

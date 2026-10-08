@@ -36,6 +36,12 @@ export type AgentSpec = { id: string; brain: Brain; everyMs: number };
 
 /** Adds the agents' actors to a world spec. They cannot run inside the loop: running them there would silently fake their work. */
 export function withAgents<S>(spec: WorldSpec<S>, ids: string[], firstEveryMs: number): WorldSpec<S> {
+	const seen = new Set<string>();
+	for (const id of ids) {
+		if (!id || typeof id !== "string") throw new Error(`agent id must be a non-empty string, got ${JSON.stringify(id)}`);
+		if (seen.has(id)) throw new Error(`duplicate agent id "${id}"`);
+		seen.add(id);
+	}
 	const fail = (id: string) => () => { throw new Error(`agent "${id}" must be driven from outside the engine loop (runAgents)`); };
 	return {
 		...spec,
@@ -51,6 +57,7 @@ export type RunAgentsReport = { shifts: number; calls: number; errors: number; d
 /** Runs the world to `untilDay`, doing every agent shift outside the loop. Resumable: all state is in the world file. */
 export async function runAgents(world: World<any>, o: { agents: AgentSpec[]; untilDay: number; faults?: FaultPlan; maxShifts?: number }): Promise<RunAgentsReport> {
 	const byId = new Map(o.agents.map((a) => [a.id, a]));
+	if (byId.size !== o.agents.length) throw new Error(`duplicate agent id "${o.agents.find((a, i) => o.agents.findIndex((b) => b.id === a.id) !== i)!.id}"`);
 	const tools = new SyntheticTools(world as any, o.faults);
 	const rep: RunAgentsReport = { shifts: 0, calls: 0, errors: 0, degraded: 0 };
 	// the handoffs in flight, kept up to date from the history (so a restart finds them again)
