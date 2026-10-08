@@ -27,7 +27,7 @@ INSERT INTO audit (at, actor, action) VALUES (1,'user:Alice','approval.approved'
 test("a database made by the audited build is adopted, backfilled and keeps its rows", () => {
 	const db = new DatabaseSync(":memory:");
 	db.exec(OLD_SCHEMA);
-	assert.deepEqual(migrate(db, MIGRATIONS), [1, 2, 3]);
+	assert.deepEqual(migrate(db, MIGRATIONS), [1, 2, 3, 4]);
 	const m = db.prepare("SELECT * FROM messages").get() as any;
 	assert.equal(m.text, "hello");
 	assert.equal(m.tenant_id, "default");
@@ -45,7 +45,7 @@ test("a database made by the audited build is adopted, backfilled and keeps its 
 
 test("a fresh database reaches the same schema as an upgraded one, and re-running does nothing", () => {
 	const fresh = new DatabaseSync(":memory:");
-	assert.deepEqual(migrate(fresh, MIGRATIONS), [1, 2, 3]);
+	assert.deepEqual(migrate(fresh, MIGRATIONS), [1, 2, 3, 4]);
 	assert.deepEqual(migrate(fresh, MIGRATIONS), []);
 	const old = new DatabaseSync(":memory:");
 	old.exec(OLD_SCHEMA);
@@ -65,7 +65,7 @@ test("a failing migration rolls back completely and is not recorded", () => {
 
 test("a database from a newer build is refused instead of being mangled", () => {
 	const db = new DatabaseSync(":memory:");
-	migrate(db, [...MIGRATIONS, { version: 4, name: "future", up: () => {} }]);
+	migrate(db, [...MIGRATIONS, { version: 5, name: "future", up: () => {} }]);
 	assert.throws(() => migrate(db, MIGRATIONS), /does not know/);
 });
 

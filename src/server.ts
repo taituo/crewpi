@@ -16,6 +16,10 @@ import { deleteNote, saveNote, visibleNotes } from "./memory.ts";
 import { MAX_UPLOAD, readImage, saveImage } from "./uploads.ts";
 import { budgetState, startBudgetWatch } from "./budget.ts";
 import { listSandboxes, startSandboxSweeper, stopSandbox } from "./sandbox.ts";
+import { Registry } from "./org/registry.ts";
+import { seedDefaultOrg } from "./org/seed.ts";
+import { rulePlanner } from "./org/propose.ts";
+import { DEFAULT_TENANT } from "./migrations.ts";
 import { getClient, listLive, signalDecision, startIncident } from "./temporal-client.ts";
 import { startTemporalWorker } from "./temporal.ts";
 import { setChannelStatus } from "./channels.ts";
@@ -73,6 +77,7 @@ async function readRaw(req: IncomingMessage, max: number): Promise<Buffer> {
 
 const auditAs = (user: User, action: string, detail: Record<string, unknown> = {}) => store.audit(`user:${user.name}`, action, detail, user.sub);
 
+const registry = new Registry();
 const err = (status: number, message: string) => Object.assign(new Error(message), { status });
 
 async function serveStatic(res: ServerResponse, pathname: string) {
@@ -345,6 +350,51 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, user: Us
 		return json(res, 200, { stopped });
 	}
 
+	if (path.startsWith("/api/orgs")) {
+		if (!config.features.orgModel) throw err(404, "no such endpoint");
+		const reg = registry;
+		const actor = { tenantId: DEFAULT_TENANT, participantId: reg.ensureParticipant(DEFAULT_TENANT, "human", user.sub, user.name), platformRoles: user.roles };
+		const body = m === "GET" ? {} : await readBody(req);
+		if (m === "GET" && path === "/api/orgs") return json(res, 200, { organizations: reg.listOrgs(actor) });
+		if (m === "POST" && path === "/api/orgs") {
+			const r = reg.createOrg(actor, { name: String(body.name ?? "") });
+			auditAs(user, "org.create", r);
+			return json(res, 200, r);
+		}
+		if ((mm = /^\/api\/orgs\/([\w-]+)$/.exec(path)) && m === "GET") return json(res, 200, reg.describe(actor, mm[1], url.searchParams.get("version") ?? undefined));
+		if ((mm = /^\/api\/orgs\/([\w-]+)\/versions$/.exec(path))) {
+			if (m === "GET") return json(res, 200, { versions: reg.listVersions(actor, mm[1]) });
+			if (m === "POST") {
+				const r = reg.createDraft(actor, mm[1], body.from ? String(body.from) : undefined, String(body.note ?? "").slice(0, 200));
+				auditAs(user, "org.draft", { org: mm[1], ...r });
+				return json(res, 200, r);
+			}
+		}
+		if ((mm = /^\/api\/orgs\/([\w-]+)\/versions\/([\w-]+)\/(ops|validate|adopt|propose)$/.exec(path)) && m !== "GET") {
+			if (mm[3] === "ops") {
+				if (!Array.isArray(body.ops)) throw err(400, "ops must be an array");
+				const r = reg.applyOps(actor, mm[1], mm[2], body.ops);
+				auditAs(user, "org.edit", { org: mm[1], version: mm[2], ops: body.ops.length });
+				return json(res, 200, r);
+			}
+			if (mm[3] === "propose") {
+				// A proposal is only a preview of operations; applying them is a separate, authorized call.
+				if (!reg.can(actor, mm[1], "org.edit")) throw err(403, "requires org.edit");
+				return json(res, 200, rulePlanner(String(body.text ?? "").slice(0, 2000)));
+			}
+			if (mm[3] === "validate") return json(res, 200, { findings: reg.validate(actor, mm[1], mm[2]) });
+			try {
+				const r = reg.adopt(actor, mm[1], mm[2]);
+				auditAs(user, "org.adopt", { org: mm[1], version: mm[2] });
+				return json(res, 200, r);
+			} catch (e: any) {
+				if (e.findings) return json(res, 409, { error: e.message, findings: e.findings });
+				throw e;
+			}
+		}
+		throw err(404, "no such endpoint");
+	}
+
 	if (m === "GET" && path === "/api/budget") return json(res, 200, { budget: budgetState() ?? null });
 
 	if (m === "GET" && path === "/api/memory") return json(res, 200, { notes: visibleNotes(user.sub) });
@@ -405,6 +455,7 @@ async function seedChannels() {
 
 assertSafeConfig();
 await initRepo();
+if (config.features.orgModel) seedDefaultOrg(registry);
 await seedChannels();
 await startRuntime();
 startBudgetWatch();

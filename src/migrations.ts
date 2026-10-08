@@ -75,4 +75,47 @@ CREATE TABLE IF NOT EXISTS entities (
 			addColumn(db, "organizations", "entity_id", "TEXT NOT NULL DEFAULT 'default'");
 		},
 	},
+	{
+		version: 4,
+		name: "org-registry",
+		up: (db) => {
+			addColumn(db, "organizations", "current_version_id", "TEXT");
+			addColumn(db, "organizations", "created_by", "TEXT");
+			// Participants are tenant-level actors; versions describe how they are arranged.
+			db.exec(`
+CREATE TABLE IF NOT EXISTS participants (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  kind TEXT NOT NULL CHECK (kind IN ('human','assistant_agent','internal_agent','external_agent','service')),
+  name TEXT NOT NULL, external_ref TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS participants_ref ON participants(tenant_id, kind, external_ref);
+CREATE TABLE IF NOT EXISTS org_versions (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), tenant_id TEXT NOT NULL,
+  number INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('draft','adopted','archived')),
+  parent_version_id TEXT, note TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at INTEGER NOT NULL, adopted_at INTEGER,
+  UNIQUE (organization_id, number));
+CREATE TABLE IF NOT EXISTS org_nodes (
+  id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES org_versions(id), tenant_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('team','role','capability','system','external_party')),
+  name TEXT NOT NULL, attrs TEXT NOT NULL DEFAULT '{}', UNIQUE (version_id, kind, name));
+CREATE TABLE IF NOT EXISTS org_edges (
+  id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES org_versions(id), tenant_id TEXT NOT NULL,
+  from_node TEXT NOT NULL REFERENCES org_nodes(id), to_node TEXT NOT NULL REFERENCES org_nodes(id),
+  type TEXT NOT NULL, class TEXT NOT NULL CHECK (class IN ('descriptive','authoritative')),
+  granted_by TEXT, valid_to INTEGER, policy_version_id TEXT, created_at INTEGER NOT NULL,
+  UNIQUE (version_id, from_node, to_node, type));
+CREATE TABLE IF NOT EXISTS org_memberships (
+  version_id TEXT NOT NULL REFERENCES org_versions(id), tenant_id TEXT NOT NULL,
+  participant_id TEXT NOT NULL REFERENCES participants(id), node_id TEXT NOT NULL REFERENCES org_nodes(id),
+  role TEXT NOT NULL DEFAULT 'member', valid_from INTEGER, valid_to INTEGER, PRIMARY KEY (version_id, participant_id, node_id));
+CREATE TABLE IF NOT EXISTS org_agent_configs (
+  version_id TEXT NOT NULL REFERENCES org_versions(id), tenant_id TEXT NOT NULL,
+  participant_id TEXT NOT NULL REFERENCES participants(id), model TEXT, instructions TEXT NOT NULL DEFAULT '',
+  tools TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (version_id, participant_id));
+CREATE TABLE IF NOT EXISTS org_policies (
+  id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES org_versions(id), tenant_id TEXT NOT NULL,
+  kind TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL, hash TEXT NOT NULL, UNIQUE (version_id, kind, name));
+CREATE INDEX IF NOT EXISTS org_nodes_v ON org_nodes(version_id);
+CREATE INDEX IF NOT EXISTS org_edges_v ON org_edges(version_id);`);
+		},
+	},
 ];

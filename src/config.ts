@@ -75,6 +75,11 @@ export const config = {
 		idleMin: num(env.SANDBOX_IDLE_MIN, 30),
 	},
 
+	/** Features that are built but off until their acceptance tests and a human decide. */
+	features: {
+		orgModel: env.FEATURE_ORG_MODEL === "true",
+	},
+
 	limits: {
 		/** Agent-initiated delegations allowed per channel per 10 minutes. */
 		delegationsPer10Min: num(env.MAX_DELEGATIONS, 8),

@@ -57,7 +57,8 @@ For each: files that will change, risks (IDs from `risk-register.md`), migration
 - **Acceptance:** fresh DB and existing demo DB both reach the same schema version; existing 35 tests still pass; approval stores `sub`; startup fails fast on default secret in OIDC mode.
 - **Tests:** migration up from a DB created by the audited commit (fixture copy); idempotent re-run.
 
-### 04 Organization Registry & Builder
+### 04 Organization Registry & Builder - core DONE on branch `feat/p04-org-registry`
+**Result:** see `docs/org-registry.md`. 57/57 tests; routes verified against a running dev server. **Open:** runtime does not consume the registry yet; no graph UI; rule-based planner only.
 - **Files:** new `src/org/*` (registry service, graph validation, authority resolver), `src/agents.ts` (seed source only), `src/channels.ts` (membership via registry), `public/` minimal builder view later.
 - **Migrations:** organizations, versions, nodes, edges, participants, memberships, policies.
 - **Risks:** R-01, R-07, R-14.

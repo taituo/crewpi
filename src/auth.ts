@@ -66,6 +66,7 @@ const DEV_USERS: Record<string, User> = {
 	alice: { sub: "dev-alice", name: "Alice (approver)", roles: ["approver"] },
 	bob: { sub: "dev-bob", name: "Bob (operator)", roles: ["operator"] },
 	carol: { sub: "dev-carol", name: "Carol (viewer)", roles: ["viewer"] },
+	root: { sub: "dev-root", name: "Root (admin)", roles: ["admin"] },
 };
 
 // ---------------------------------------------------------------- OIDC (authorization code + PKCE)
