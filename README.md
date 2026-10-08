@@ -142,6 +142,8 @@ With keys, the same agents run on real models:
 | `OPENAI_API_KEY` | OpenAI via pi-ai. Models per agent: `OPS_MODEL`, `DEV_MODEL`, `REVIEW_MODEL` (defaults in `src/agents.ts`) |
 | `LOCAL_LLM_BASE_URL` + `LOCAL_LLM_MODEL` | any OpenAI-compatible endpoint, e.g. `http://vllm.ai-system.svc:8000/v1` |
 | `AGENT_<ID>_MODEL=provider/model` | pin one agent, e.g. `AGENT_OPS_MODEL=local/qwen3-coder` |
+| `OPENCODE_API_KEY` | OpenCode Go subscription (pi-ai provider `opencode-go`), e.g. `AGENT_DEFAULT_MODEL=opencode-go/muse-spark-1.3-contributor` |
+| `AGENT_DEFAULT_MODEL=provider/model` | model for every agent without its own `AGENT_<ID>_MODEL` (ids: `OPS`, `DEVELOPER`, `REVIEWER`, `INSIGHT`) |
 | `DEMO_MODE=true` | force the scripted brains |
 
 The OpenAI-compatible path is covered by an end-to-end test against a fake endpoint. The direct
